@@ -3,10 +3,10 @@ use thiserror::Error;
 use tokio::time::{sleep, Duration};
 use xca9548a::{I2cSlave, Xca9548a};
 
-use embedded_hal::blocking::i2c::{Read, Write};
+use embedded_hal::i2c::{I2c, *};
 use embedded_hal_async::i2c::{
     Error as AsyncHalI2cError, ErrorKind as AsyncHalI2cErrorKind,
-    ErrorType as AsyncHalI2cErrorType, I2c, Operation, SevenBitAddress,
+    ErrorType as AsyncHalI2cErrorType, I2c as AsyncI2c, Operation, SevenBitAddress,
 };
 
 #[derive(Error, Debug)]
@@ -28,23 +28,25 @@ impl AsyncHalI2cError for SoilSensorError {
 
 /// SoilSensor type designed to work with I2C mux device
 /// TCA9548A
-pub struct SoilSensor {
-    i2c: AsyncWrapper,
+pub struct SoilSensor{//<I2C: 'static + I2c> {
+    i2c: I2cSlave<'static, Xca9548a<I2cdev>,I2cdev>,
     temp_delay: u64,
     moisture_delay: u64,
     address: u8,
 }
 
+
+unsafe impl Send for SoilSensor {}
+unsafe impl Sync for SoilSensor {}
+
 /// Define a wrapper around the I2cSlave object returned by the
 /// TCA9548A library, so we can implement the embedded_hal_async
 /// I2c trait and build out an async framework.
 /// TODO: Need to port this library as it no longer seems maitnained
-pub struct AsyncWrapper {
-    slave: I2cSlave<'static, Xca9548a<I2cdev>, I2cdev>,
-}
-
-unsafe impl Send for SoilSensor {}
-unsafe impl Sync for SoilSensor {}
+/*pub struct AsyncWrapper {
+    slave: I2cSlave
+}*/
+/* 
 
 unsafe impl Send for AsyncWrapper {}
 unsafe impl Sync for AsyncWrapper {}
@@ -52,6 +54,7 @@ unsafe impl Sync for AsyncWrapper {}
 impl AsyncHalI2cErrorType for AsyncWrapper {
     type Error = SoilSensorError;
 }
+
 
 impl I2c<SevenBitAddress> for AsyncWrapper {
     async fn transaction(
@@ -81,11 +84,12 @@ impl I2c<SevenBitAddress> for AsyncWrapper {
         Ok(())
     }
 }
+*/
 
 impl SoilSensor {
-    pub fn new(i2c: I2cSlave<'static, Xca9548a<I2cdev>, I2cdev>, address: u8) -> Self {
+    pub fn new(i2c: I2cSlave<'static, Xca9548a<I2cdev>, I2cdev>, address: u8) -> Self {//where I2cdev: I2c {
         Self {
-            i2c: AsyncWrapper { slave: i2c },
+            i2c,
             temp_delay: 125,
             moisture_delay: 5000,
             address,
@@ -118,7 +122,7 @@ impl SoilSensor {
     ) -> Result<(), SoilSensorError> {
         self.i2c
             .write(self.address, w_buffer)
-            .await
+          //  .await
             .map_err(|_| SoilSensorError::I2cWriteError)?;
 
         // from https://github.com/adafruit/Adafruit_Seesaw/blob/master/Adafruit_seesaw.cpp#L952
@@ -126,7 +130,7 @@ impl SoilSensor {
 
         self.i2c
             .read(self.address, r_buffer)
-            .await
+        //    .await
             .map_err(|_| SoilSensorError::I2cReadError)?;
 
         Ok(())
