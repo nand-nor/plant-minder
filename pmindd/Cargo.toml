@@ -18,7 +18,7 @@ thiserror = {version="1.0.59", optional=true}
 
 
 [features]
-i2cmux_wired =  ["pmindp-sensor/local_async_i2cmux", "embedded-hal", "embedded-hal-async", "linux-embedded-hal", "xca9548a", "thiserror"]
+i2cmux_wired =  ["pmindp-sensor/async_i2cmux", "embedded-hal", "embedded-hal-async", "linux-embedded-hal", "xca9548a", "thiserror"]
 thread_mesh = [] 
 
 [[bin]]

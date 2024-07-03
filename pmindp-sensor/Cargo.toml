@@ -14,6 +14,8 @@ thiserror = {version = "1.0.59", optional = true}
 async-trait = {version = "0.1.8", optional = true}
 
 [features]
+default=[]
 std=["dep:async-trait","dep:thiserror",]
-i2c=[]
-local_async_i2cmux=["std","i2c","dep:xca9548a","dep:linux-embedded-hal","dep:embedded-hal","dep:embedded-hal-async","dep:tokio"]
+i2c=["dep:linux-embedded-hal","dep:embedded-hal","dep:embedded-hal-async",]
+async_i2cmux=["std","i2c","dep:xca9548a","dep:tokio"]
+no_std_thread=["dep:embedded-hal"]

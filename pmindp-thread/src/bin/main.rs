@@ -1,8 +1,7 @@
 #![no_std]
 #![no_main]
 
-
-use core::{cell::RefCell, net::Ipv6Addr};
+use core::cell::RefCell;
 use core::pin::pin;
 
 use critical_section::Mutex;
@@ -11,36 +10,34 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
     delay::Delay,
-    rtc_cntl::Rtc,
     gpio::Io,
     i2c::I2C,
     peripherals::Peripherals,
     prelude::*,
-    system::SystemControl,
     rng::Rng,
-    timer::{systimer::SystemTimer, timg::{TimerGroup, TimerInterrupts}},
+    system::SystemControl,
+    timer::{
+        systimer::SystemTimer,
+        timg::{TimerGroup, TimerInterrupts},
+    },
 };
 use esp_println::println;
-use pmindp_thread::{sensor_read, SENSOR_TIMER_TG0_T0_LEVEL, I2cSoilSensor};
+use pmindp_thread::{led_setup, sensor_read, sensor_setup, SENSOR_TIMER_TG0_T0_LEVEL};
 
 use esp_ieee802154::{Config, Ieee802154};
 use esp_openthread::{NetworkInterfaceUnicastAddress, OperationalDataset, ThreadTimestamp};
 
-use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
 pub const BOUND_PORT: u16 = 1212;
 
 #[entry]
 fn main() -> ! {
-
-
-    //esp_println::logger::init_logger(log::LevelFilter::Debug);
+    //  esp_println::logger::init_logger(log::LevelFilter::Debug);
 
     let mut peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
-
 
     let systimer = SystemTimer::new(peripherals.SYSTIMER);
     let radio = peripherals.IEEE802154;
@@ -111,43 +108,36 @@ fn main() -> ! {
 
     let mut buffer = [0u8; 512];
 
-    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
-
-    let led_pin = io.pins.gpio8;
-
-    #[cfg(not(feature = "esp32h2"))]
-    let rmt = esp_hal::rmt::Rmt::new(peripherals.RMT, 80.MHz(), &clocks, None).unwrap();
-    #[cfg(feature = "esp32h2")]
-    let rmt = esp_hal::rmt::Rmt::new(peripherals.RMT, 32.MHz(), &clocks, None).unwrap();
-
-    let rmt_buffer = smartLedBuffer!(1);
-    let mut led = SmartLedsAdapter::new(rmt.channel0, led_pin, rmt_buffer, &clocks);
     let mut data;
     let mut eui: [u8; 6] = [0u8; 6];
 
-    
-    let mut i2c = I2C::new(
-        peripherals.I2C0,
-        io.pins.gpio5,
-        io.pins.gpio6,
-        400.kHz(),
-        &clocks,
-        None,
-    );
+    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let led_pin = io.pins.gpio8;
 
+    let mut led = led_setup(peripherals.RMT, led_pin, &clocks);
 
-    let soil_sensor = I2cSoilSensor::new(&mut i2c, 5000, TimerGroup::new(
-        peripherals.TIMG0,
-        &clocks,
-        Some(TimerInterrupts {
-            timer0: Some(SENSOR_TIMER_TG0_T0_LEVEL),
-            ..Default::default()
-        })
+    let delay = Delay::new(&clocks);
+
+    sensor_setup(
+        &mut I2C::new(
+            peripherals.I2C0,
+            io.pins.gpio5,
+            io.pins.gpio6,
+            400.kHz(),
+            &clocks,
+            None,
         ),
-        Delay::new(&clocks),
+        5000,
+        TimerGroup::new(
+            peripherals.TIMG0,
+            &clocks,
+            Some(TimerInterrupts {
+                timer0: Some(SENSOR_TIMER_TG0_T0_LEVEL),
+                ..Default::default()
+            }),
+        ),
     );
 
-    
     let mut hello: Option<no_std_net::Ipv6Addr> = None;
     let mut send_data_buf: [u8; 6] = [0u8; 6];
     loop {
@@ -158,21 +148,19 @@ fn main() -> ! {
         led.write(brightness(gamma(data.iter().cloned()), 50))
             .unwrap();
 
-            if let Ok(Some((moisture, temp))) = sensor_read(&soil_sensor) {
-                println!("Moisture: {:?}, temp: {:?}", moisture, temp);
+        if let Ok(Some((moisture, temp))) = sensor_read(delay) {
+            println!("Moisture: {:?}, temp: {:?}", moisture, temp);
 
-                send_data_buf[..2].copy_from_slice(&moisture.to_le_bytes());
-                send_data_buf[2..].copy_from_slice(&temp.to_be_bytes());
+            send_data_buf[..2].copy_from_slice(&moisture.to_le_bytes());
+            send_data_buf[2..].copy_from_slice(&temp.to_be_bytes());
 
-                if let Some(hello) = hello { 
-                    socket.send(hello, BOUND_PORT,&send_data_buf).unwrap();
-                    data = [colors::MISTY_ROSE];
-                    led.write(brightness(gamma(data.iter().cloned()), 100))
-                        .unwrap();
-                }
-
+            if let Some(hello) = hello {
+                socket.send(hello, BOUND_PORT, &send_data_buf).unwrap();
+                data = [colors::MISTY_ROSE];
+                led.write(brightness(gamma(data.iter().cloned()), 100))
+                    .unwrap();
             }
-
+        }
 
         let (len, from, port) = socket.receive(&mut buffer).unwrap();
         if len > 0 {
@@ -183,7 +171,13 @@ fn main() -> ! {
                 port
             );
 
-            socket.send(from, BOUND_PORT, b"something to authenticate").unwrap();
+            if buffer[0] == 0xbe {
+                println!("Beef face");
+            }
+
+            socket
+                .send(from, BOUND_PORT, b"beefface authenticate!")
+                .unwrap();
             hello = Some(from);
             println!("Handshake complete");
         }
@@ -205,10 +199,8 @@ fn main() -> ! {
         data = [colors::MEDIUM_ORCHID];
         led.write(brightness(gamma(data.iter().cloned()), 50))
             .unwrap();
-    
     }
 }
-
 
 fn print_all_addresses(addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6>) {
     println!("Currently assigned addresses");
@@ -217,5 +209,3 @@ fn print_all_addresses(addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6>) 
     }
     println!();
 }
-
-

@@ -16,6 +16,7 @@ no-std-net = {version= "0.6.0"}
 critical-section = {version= "1.1.0"}
 smart-leds = {version= "0.4.0" }
 esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", rev="1fcb29a666feb2aed37f3a48d62915ddbfc177ef"}
+pmindp-sensor = {  path="../pmindp-sensor", features=["no_std_thread"]}
 
 
 [features]
