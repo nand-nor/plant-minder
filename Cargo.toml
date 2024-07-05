@@ -1,0 +1,3 @@
+[workspace]
+members = ["pmindd", "pmindb", "pmindp-sensor", "pmindp-esp32-thread"]
+resolver = "2"

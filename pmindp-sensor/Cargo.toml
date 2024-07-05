@@ -1,0 +1,22 @@
+[package]
+name = "pmindp-sensor"
+version = "0.1.0"
+edition = "2021"
+authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
+
+[dependencies]
+tokio = {version = "1.37.0", features=["rt-multi-thread", "rt", "macros", "time", "sync"] , optional = true}
+rppal = {version = "0.17.1", optional = true}
+embedded-hal = {version = "1.0", optional = true}
+embedded-hal-async = {version = "1.0.0", optional = true}
+linux-embedded-hal = {version = "0.4.0", default-features=false, features=["async-tokio", "i2c"], optional = true}
+xca9548a = {version="0.2.1", git="https://github.com/nand-nor/xca9548a-rs", branch="add/embedded-hal-async", features=["embedded-hal-async"], optional = true}
+thiserror = {version = "1.0.59", optional = true}
+async-trait = {version = "0.1.8", optional = true}
+
+[features]
+default=[]
+std=["dep:async-trait","dep:thiserror",]
+i2c=["dep:linux-embedded-hal","dep:embedded-hal","dep:embedded-hal-async",]
+async_i2cmux=["std","i2c","dep:xca9548a","dep:tokio"]
+no_std_thread=["dep:embedded-hal"]

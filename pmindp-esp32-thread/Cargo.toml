@@ -1,0 +1,25 @@
+[package]
+name = "pmindp-esp32-thread"
+version = "0.1.0"
+edition = "2021"
+authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
+
+[dependencies]
+esp-hal = {version= "0.18.0", git = "https://github.com/esp-rs/esp-hal.git"}
+esp-backtrace = { version="0.12.1", git = "https://github.com/esp-rs/esp-hal.git", features = ["panic-handler", "exception-handler", "println"]}
+esp-println       = { version= "0.9.1", git = "https://github.com/esp-rs/esp-hal.git", features = ["log"]}
+esp-ieee802154 = {version= "0.1.0", git = "https://github.com/esp-rs/esp-hal.git"}
+esp-hal-smartled = { git = "https://github.com/esp-rs/esp-hal.git"}
+log = {version= "0.4.21"}
+heapless = {version= "0.8.0"}
+no-std-net = {version= "0.6.0"}
+critical-section = {version= "1.1.0"}
+smart-leds = {version= "0.4.0" }
+esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", rev="da9171c"}
+pmindp-sensor = {  path="../pmindp-sensor", features=["no_std_thread"]}
+
+
+[features]
+default = ["esp32c6"]
+esp32c6 = [ "esp-hal/esp32c6", "esp-ieee802154/esp32c6", "esp-openthread/esp32c6", "esp-backtrace/esp32c6", "esp-println/esp32c6", "esp-hal-smartled/esp32c6" ]
+esp32h2 = [ "esp-hal/esp32h2", "esp-ieee802154/esp32h2", "esp-openthread/esp32h2", "esp-backtrace/esp32h2", "esp-println/esp32h2", "esp-hal-smartled/esp32h2" ]
