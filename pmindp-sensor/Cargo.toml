@@ -2,6 +2,7 @@
 name = "pmindp-sensor"
 version = "0.1.0"
 edition = "2021"
+authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 
 [dependencies]
 tokio = {version = "1.37.0", features=["rt-multi-thread", "rt", "macros", "time", "sync"] , optional = true}
