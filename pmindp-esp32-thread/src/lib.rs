@@ -4,7 +4,12 @@
 
 #![no_std]
 
+extern crate alloc;
+
 mod sensor;
+
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 
@@ -12,13 +17,16 @@ use esp_hal::{
     clock::Clocks,
     gpio::GpioPin,
     peripheral::Peripheral,
-    peripherals::RMT,
+    peripherals::{RMT, RNG},
     prelude::*,
     rmt::{Channel, Rmt},
+    rng::Rng,
+    timer::systimer::SystemTimer,
     Blocking,
 };
-
-pub use sensor::{sensor_setup, sensor_read, SENSOR_TIMER_TG0_T0_LEVEL};
+use esp_ieee802154::{Config, Ieee802154};
+use esp_openthread::{OpenThread, OperationalDataset};
+pub use sensor::{sensor_read, sensor_setup, SENSOR_TIMER_TG0_T0_LEVEL};
 
 pub fn led_setup(
     rmt: impl Peripheral<P = RMT>,

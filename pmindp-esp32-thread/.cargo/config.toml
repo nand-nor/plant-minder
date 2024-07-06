@@ -17,5 +17,11 @@ rustflags = [
 
 target = "riscv32imac-unknown-none-elf"
 
+[env]
+# This sets the static array that the global alloc object uses to 
+# allocate memory as needed. Keep this small 
+# (the default is 32 Mib which is too large)
+WEE_ALLOC_STATIC_ARRAY_BACKEND_BYTES="16384"
+
 [unstable]
-build-std = ["core"]
+build-std = ["core", "alloc"]

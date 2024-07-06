@@ -30,7 +30,7 @@ async fn main() -> Result<(), SoilSensorError> {
                 read_from_sensor(Arc::clone(sensor), format!("Plant Sensor {i:}")).await?;
                 Ok::<(), SoilSensorError>(())
             })
-            .for_each(|_|{}); 
+            .for_each(|_| {});
 
         sleep(Duration::from_secs(5)).await;
     }

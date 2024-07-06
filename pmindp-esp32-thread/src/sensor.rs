@@ -10,10 +10,7 @@ use esp_hal::{
 
 use pmindp_sensor::{SoilSensorError, ATSAMD10};
 
-use core::{
-    borrow::BorrowMut,
-    cell::RefCell,
-};
+use core::{borrow::BorrowMut, cell::RefCell};
 
 use critical_section::Mutex;
 
@@ -28,7 +25,6 @@ const DEFAULT_MIN_INTERVAL: u64 = 5000;
 static SENSOR_TIMER_INTERVAL: Mutex<RefCell<u64>> = Mutex::new(RefCell::new(DEFAULT_MIN_INTERVAL));
 
 static SENSOR_TIMER_FIRED: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
-
 
 pub fn sensor_setup<'a>(
     i2c: &'a mut I2C<'a, I2C0, Blocking>,
