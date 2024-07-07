@@ -25,15 +25,18 @@ use esp_println::println;
 use pmindp_esp32_thread::{led_setup, sensor_read, sensor_setup, SENSOR_TIMER_TG0_T0_LEVEL};
 
 use esp_ieee802154::{Config, Ieee802154};
-use esp_openthread::{NetworkInterfaceUnicastAddress, OperationalDataset, ThreadTimestamp};
+use esp_openthread::{
+    NetworkInterfaceUnicastAddress, OperationalDataset, ThreadDeviceRole, ThreadTimestamp,
+};
 
 use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
 pub const BOUND_PORT: u16 = 1212;
+use coap_lite::{CoapRequest, Packet};
 
 #[entry]
 fn main() -> ! {
-    //esp_println::logger::init_logger(log::LevelFilter::Debug);
+    esp_println::logger::init_logger(log::LevelFilter::Info);
 
     let mut peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
@@ -50,10 +53,13 @@ fn main() -> ! {
     );
 
     let changed = Mutex::new(RefCell::new(false));
+
     let mut callback = |flags| {
         println!("{:?}", flags);
         critical_section::with(|cs| *changed.borrow_ref_mut(cs) = true);
     };
+
+    openthread.set_change_callback(Some(&mut callback));
 
     openthread
         .set_radio_config(Config {
@@ -66,8 +72,6 @@ fn main() -> ! {
             ..Config::default()
         })
         .unwrap();
-
-    openthread.set_change_callback(Some(&mut callback));
 
     let dataset = OperationalDataset {
         active_timestamp: Some(ThreadTimestamp {
@@ -127,7 +131,7 @@ fn main() -> ! {
             &clocks,
             None,
         ),
-        5000,
+        25000,
         TimerGroup::new(
             peripherals.TIMG0,
             &clocks,
@@ -138,7 +142,7 @@ fn main() -> ! {
         ),
     );
 
-    let mut hello: Option<no_std_net::Ipv6Addr> = None;
+    let mut observer_addr: Option<no_std_net::Ipv6Addr> = None;
     let mut send_data_buf: [u8; 6] = [0u8; 6];
     loop {
         openthread.process();
@@ -148,37 +152,87 @@ fn main() -> ! {
         led.write(brightness(gamma(data.iter().cloned()), 50))
             .unwrap();
 
-        if let Ok(Some((moisture, temp))) = sensor_read(delay) {
-            println!("Moisture: {:?}, temp: {:?}", moisture, temp);
+        if let Some(observer) = observer_addr {
+            if let Ok(Some((moisture, temp))) = sensor_read(delay) {
+                println!("Moisture: {:?}, temp: {:?}", moisture, temp);
 
-            send_data_buf[..2].copy_from_slice(&moisture.to_le_bytes());
-            send_data_buf[2..].copy_from_slice(&temp.to_be_bytes());
+                send_data_buf[..2].copy_from_slice(&moisture.to_le_bytes());
+                send_data_buf[2..].copy_from_slice(&temp.to_le_bytes());
 
-            if let Some(hello) = hello {
-                socket.send(hello, BOUND_PORT, &send_data_buf).unwrap();
-                data = [colors::MISTY_ROSE];
-                led.write(brightness(gamma(data.iter().cloned()), 100))
-                    .unwrap();
+                let role = openthread.get_device_role();
+                println!("Role: {:?}", role);
+
+                match role {
+                    ThreadDeviceRole::Detached
+                    | ThreadDeviceRole::Unknown
+                    | ThreadDeviceRole::Disabled => {
+
+                        /*
+                        println!("Attempting recovery...");
+                        // try to recover
+                        socket.close();
+                        openthread.set_child_timeout(60).unwrap();
+                        openthread.ipv6_set_enabled(false).unwrap();
+                        openthread.thread_set_enabled(false).unwrap();
+                        openthread.ipv6_set_enabled(true).unwrap();
+                        openthread.thread_set_enabled(true).unwrap();
+                        let mut socket = openthread.get_udp_socket::<512>().unwrap();
+                        let mut socket = pin!(socket);
+                        socket.bind(BOUND_PORT).unwrap();*/
+                    }
+                    _ => {
+                        if let Err(e) = socket.send(observer, BOUND_PORT, &send_data_buf) {
+                            // TODO depending on the error, need to set handshake IPv6 to None
+                            // until observer can reestablish conn; this will prevent the
+                            // node from sending data until success is better guaranteed
+                            println!("Error sending {:?}", e);
+                        } else {
+                            data = [colors::MISTY_ROSE];
+                            led.write(brightness(gamma(data.iter().cloned()), 100)).ok();
+                        }
+                    }
+                };
             }
         }
 
         let (len, from, port) = socket.receive(&mut buffer).unwrap();
         if len > 0 {
-            println!(
-                "received {:02x?} from {:?} port {}",
-                &buffer[..len],
-                from,
-                port
-            );
+            if let Ok(packet) = Packet::from_bytes(&buffer[..len]) {
+                let request = CoapRequest::from_packet(packet, from);
 
-            if buffer[0] == 0xbe {
-                println!("Beef face");
+                let method = request.get_method().clone();
+                let path = request.get_path();
+                let message_id = request.message.header.message_id;
+                println!(
+                    "Received CoAP request message ID '{} {:?} {}' from {}",
+                    message_id, method, path, from
+                );
+
+                let mut response = request.response.unwrap();
+                response.message.payload = b"beefface authenticate!".to_vec();
+
+                let packet = response.message.to_bytes().unwrap();
+                socket.send(from, BOUND_PORT + 1, packet.as_slice()).ok();
+
+                drop(packet);
+            } else {
+                println!(
+                    "received {:02x?} from {:?} port {}",
+                    &buffer[..len],
+                    from,
+                    port
+                );
+
+                // TODO some simple handshake auth
+                if buffer[0] == 0xbe {
+                    println!("Beef face!");
+                }
+                socket
+                    .send(from, BOUND_PORT + 1, b"beefface authenticate!")
+                    .unwrap();
             }
 
-            socket
-                .send(from, BOUND_PORT, b"beefface authenticate!")
-                .unwrap();
-            hello = Some(from);
+            observer_addr = Some(from);
             println!("Handshake complete");
         }
 
