@@ -15,7 +15,7 @@ heapless = {version= "0.8.0"}
 no-std-net = {version= "0.6.0"}
 critical-section = {version= "1.1.0"}
 smart-leds = {version= "0.4.0" }
-esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", rev="da9171c"}
+esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", rev="1c63ed6"}
 pmindp-sensor = {  path="../pmindp-sensor", features=["no_std_thread"]}
 coap-lite = {version="0.12.0", features=["udp"],default-features=false}
 wee_alloc = {version = "0.4.5", features=["static_array_backend"],  default-features=false}

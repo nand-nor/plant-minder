@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 
 [dependencies]
-pmindb = {  path="../pmindb", optional=true}
+pmindb = {  path="../pmindb"}
 pmindp-sensor = {  path="../pmindp-sensor", optional=true}
 tokio = {version = "1.37.0", features=["rt-multi-thread", "rt", "macros", "time", "sync"]}
 rppal = {version="0.17.1"}
