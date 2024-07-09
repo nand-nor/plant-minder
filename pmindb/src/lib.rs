@@ -38,12 +38,10 @@ pub enum OtCliError {
 
 pub struct OtCliClient;
 
-//unsafe impl Send for OtCliClient {}
-//unsafe impl Sync for OtCliClient {}
-
+// TODO: to avoid ExitStatus(unix_wait_status(256)) implement backoff + retries !
 impl OtCliClient {
     pub fn get_children_from_cli(&self) -> Result<Vec<(String, Ipv6Addr)>, OtCliError> {
-        let child_resp = Command::new("ot-ctl").arg("childip".to_string()).output()?;
+        let child_resp = Command::new("ot-ctl").arg("childip").output()?;
 
         if child_resp.status.success() {
             Ok(OtCliClient::parse_childip_output(
@@ -69,11 +67,16 @@ impl OtCliClient {
                     let (rloc, rem) = l.split_at(idx);
                     let rem = rem.trim_start_matches(": ");
                     let rem = rem.trim();
-                    if let Some(ip) = rem.parse::<std::net::Ipv6Addr>().ok() {
+                    /*
+                     if let Ok(ip) = rem.parse::<std::net::Ipv6Addr>() {
                         Some((rloc.to_string(), ip))
                     } else {
                         None
                     }
+                     */
+                    rem.parse::<Ipv6Addr>()
+                        .ok()
+                        .map(|ip| (rloc.to_string(), ip))
                 } else {
                     None
                 }
@@ -87,7 +90,7 @@ impl OtCliClient {
     }
 
     fn get_omr_prefix_from_cli(&self) -> Result<Ipv6Net, OtCliError> {
-        let resp = Command::new("ot-ctl").arg("prefix".to_string()).output()?;
+        let resp = Command::new("ot-ctl").arg("prefix").output()?;
 
         if resp.status.success() {
             OtCliClient::parse_prefix_output(std::str::from_utf8(&resp.stdout)?.to_string())
@@ -103,16 +106,16 @@ impl OtCliClient {
         let res = res.trim_end_matches("Done");
         let elems = res.split(' ').collect::<Vec<_>>();
         if elems.is_empty() {
-            Err(OtCliError::OtClientError(format!(
-                "No prefix is currently set"
-            )))
+            Err(OtCliError::OtClientError(
+                "No prefix is currently set".to_string(),
+            ))
         } else {
             Ok(elems[0].parse()?)
         }
     }
 
     fn get_ip_addrs_from_cli(&self) -> Result<Vec<Ipv6Addr>, OtCliError> {
-        let resp = Command::new("ot-ctl").arg("ipaddr".to_string()).output()?;
+        let resp = Command::new("ot-ctl").arg("ipaddr").output()?;
 
         if resp.status.success() {
             let res = std::str::from_utf8(&resp.stdout)?.to_string();
@@ -146,11 +149,11 @@ impl OtCliClient {
             .iter()
             .find(|i| i.segments()[0] == prefix_addr.segments()[0])
         {
-            Ok(ip.clone())
+            Ok(*ip)
         } else {
-            Err(OtCliError::OtClientError(format!(
-                "No matching prefix found"
-            )))
+            Err(OtCliError::OtClientError(
+                "No matching prefix found".to_string(),
+            ))
         }
     }
 }

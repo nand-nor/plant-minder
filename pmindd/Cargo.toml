@@ -15,12 +15,14 @@ linux-embedded-hal = {version = "0.4.0", default-features=false, features=["asyn
 xca9548a = {version="0.2.1", git="https://github.com/nand-nor/xca9548a-rs", branch="add/embedded-hal-async", features=["embedded-hal-async"], optional=true}
 thiserror = {version="1.0.59", optional=true}
 coap-lite = {version="0.12.0", features=["udp"],default-features=false, optional=true}
-
+actix = {version = "0.13.5", features=["macros"], optional=true}
+env_logger = {version= "0.11.3"}
+log = {version= "0.4.21"}
 
 [features]
 default=[]
 i2cmux_wired =  ["pmindp-sensor/async_i2cmux", "embedded-hal", "embedded-hal-async", "linux-embedded-hal", "xca9548a", "thiserror"]
-thread_mesh = ["coap-lite"] 
+thread_mesh = ["coap-lite", "actix"] 
 
 [[bin]]
 path = "./src/bin/i2cmux_wired/main.rs"

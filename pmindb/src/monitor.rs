@@ -13,7 +13,7 @@ pub enum OtMonitorError {
 }
 
 pub struct OtMonitor {
-    children: HashMap<String, Ipv6Addr>,
+    nodes: HashMap<String, Ipv6Addr>,
     addr: Ipv6Addr,
     ot_client: Box<dyn OtClient>,
 }
@@ -24,20 +24,23 @@ impl OtMonitor {
             if let Ok(addr) = ot_client.get_omr_ip() {
                 addr
             } else {
-                // Update it later
+                // This will trigger logic to update later if possible
                 Ipv6Addr::from([0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1])
             }
         };
 
         Self {
-            children: HashMap::default(),
+            nodes: HashMap::default(),
             addr,
             ot_client,
         }
     }
 
     pub fn get_omr_ip(&self) -> Result<Ipv6Addr, OtMonitorError> {
-        Ok(self.ot_client.get_omr_ip()?)
+        self.ot_client.get_omr_ip().map_err(|e| {
+            log::error!("Ot Client unable to get OMR ip {e:}");
+            OtMonitorError::from(e)
+        })
     }
 
     pub fn check_addr_update_needed(&mut self) -> Result<bool, OtMonitorError> {
@@ -46,52 +49,48 @@ impl OtMonitor {
     }
 
     pub fn update_addr(&mut self) -> Result<(), OtMonitorError> {
-        self.addr = self.ot_client.get_omr_ip()?;
+        self.addr = self.get_omr_ip()?;
         Ok(())
     }
 
-    pub fn get_current_active_children(&self) -> Result<Vec<Ipv6Addr>, OtMonitorError> {
+    pub fn get_nodes(&self) -> Result<Vec<(String, Ipv6Addr)>, OtMonitorError> {
         Ok(self
             .ot_client
             .get_child_ips()?
             .iter()
-            .map(|(_, ip)| ip.clone())
-            .collect())
-    }
-
-    pub fn get_current_tracked_children(&self) -> Vec<Ipv6Addr> {
-        self.children.clone().into_values().collect()
-    }
-
-    pub fn get_children(&mut self) -> Result<Vec<Ipv6Addr>, OtMonitorError> {
-        let children = self.ot_client.get_child_ips()?;
-        self.inspect(children)
-    }
-
-    fn inspect(
-        &mut self,
-        children: Vec<(String, Ipv6Addr)>,
-    ) -> Result<Vec<Ipv6Addr>, OtMonitorError> {
-        let new_children: Vec<Ipv6Addr> = children
-            .iter()
-            .map(|(rloc, addr)| {
-                if addr.segments()[0] == self.addr.segments()[0] {
+            .filter_map(|(rloc, ip)| {
+                if ip.segments()[0] == self.addr.segments()[0] {
                     // Only push addrs that match the addr scope (OMR)
-                    self.children
-                        .entry(rloc.clone())
-                        .and_modify(|a| *a = addr.clone())
-                        .or_insert(*addr);
-                    Some(addr.clone())
+                    Some((rloc, ip))
                 } else {
                     None
                 }
             })
-            .collect::<Vec<_>>()
-            .iter()
-            .flatten()
-            .cloned()
-            .collect();
-        return Ok(new_children);
+            .map(|(r, p)| (r.clone(), *p))
+            .collect())
+    }
+
+    pub fn get_current_tracked_nodes(&self) -> Vec<Ipv6Addr> {
+        self.nodes.clone().into_values().collect()
+    }
+
+    pub fn store_nodes(&mut self, nodes: Vec<(String, Ipv6Addr)>) -> Result<(), OtMonitorError> {
+        nodes.iter().for_each(|(rloc, addr)| {
+            self.nodes
+                .entry(rloc.clone())
+                .and_modify(|a| *a = *addr)
+                .or_insert(*addr);
+        });
+        Ok(())
+    }
+
+    pub fn node_registered(&mut self, node: (String, Ipv6Addr)) -> Result<(), OtMonitorError> {
+        log::debug!("Registering node {} : {}", node.0, node.1);
+        self.nodes
+            .entry(node.0)
+            .and_modify(|a| *a = node.1)
+            .or_insert(node.1);
+        Ok(())
     }
 }
 
@@ -99,19 +98,19 @@ impl Actor for OtMonitor {
     type Context = Context<Self>;
 }
 
-/// Check to see if any previously registered children have
+/// Check to see if any previously registered nodes have
 /// fallen off the network
 #[derive(Message)]
-#[rtype(result = "ChildStatusResponse")]
-pub struct GetChildStatus;
+#[rtype(result = "NodeStatusResponse")]
+pub struct GetNodeStatus;
 
-type ChildStatusResponse = Result<Vec<String>, OtMonitorError>;
+type NodeStatusResponse = Result<Vec<(String, Ipv6Addr)>, OtMonitorError>;
 
-/// Check for new children
+/// Check for new nodes
 #[derive(Message)]
-#[rtype(result = "NewChildResponse")]
-pub struct CheckNewChild;
-type NewChildResponse = Result<Vec<Ipv6Addr>, OtMonitorError>;
+#[rtype(result = "NewNodeResponse")]
+pub struct CheckNewNode;
+type NewNodeResponse = Result<Vec<(String, Ipv6Addr)>, OtMonitorError>;
 
 /// Check general network status, e.g. if OMR prefix has changed & needs updating
 #[derive(Message)]
@@ -119,27 +118,70 @@ type NewChildResponse = Result<Vec<Ipv6Addr>, OtMonitorError>;
 pub struct MonitorNetworkStatus;
 type MonitorNetworkResponse = Result<(), OtMonitorError>;
 
-
 /// Get the OMR addr
 #[derive(Message)]
 #[rtype(result = "OmrResponse")]
 pub struct OmrIp;
 type OmrResponse = Result<Ipv6Addr, OtMonitorError>;
 
+/// Indicate child successfully registered
+#[derive(Message)]
+#[rtype(result = "NodeRegResponse")]
+pub struct NodeRegistered(pub (String, Ipv6Addr));
 
-impl Handler<GetChildStatus> for OtMonitor {
-    type Result = ChildStatusResponse;
+type NodeRegResponse = Result<(), OtMonitorError>;
 
-    fn handle(&mut self, _msg: GetChildStatus, _ctx: &mut Self::Context) -> Self::Result {
-        todo!()
+impl Handler<GetNodeStatus> for OtMonitor {
+    type Result = NodeStatusResponse;
+
+    fn handle(&mut self, _msg: GetNodeStatus, _ctx: &mut Self::Context) -> Self::Result {
+        let active_nodes = self.get_nodes()?;
+
+        // Iterate through the hashmap of currently registered nodes; if any are not in the active node list then
+        // they are missing
+        let missing = self
+            .nodes
+            .iter()
+            .filter_map(|(rloc, ip)| {
+                if let Some(_found) = active_nodes.iter().find(|(r, i)| r == rloc && i == ip) {
+                    None
+                } else {
+                    Some((rloc, ip))
+                }
+            })
+            .map(|p| (p.0.clone(), *p.1))
+            .collect();
+        Ok(missing)
     }
 }
 
-impl Handler<CheckNewChild> for OtMonitor {
-    type Result = NewChildResponse;
+impl Handler<NodeRegistered> for OtMonitor {
+    type Result = NodeRegResponse;
 
-    fn handle(&mut self, _msg: CheckNewChild, _ctx: &mut Self::Context) -> Self::Result {
-        self.get_children()
+    fn handle(&mut self, msg: NodeRegistered, _ctx: &mut Self::Context) -> Self::Result {
+        self.node_registered(msg.0)
+    }
+}
+
+impl Handler<CheckNewNode> for OtMonitor {
+    type Result = NewNodeResponse;
+
+    fn handle(&mut self, _msg: CheckNewNode, _ctx: &mut Self::Context) -> Self::Result {
+        let active_nodes = self.get_nodes()?;
+
+        let new_nodes = active_nodes
+            .iter()
+            .filter_map(|(rloc, ip)| {
+                if let Some(_found) = self.nodes.iter().find(|&(r, i)| r == rloc && i == ip) {
+                    None
+                } else {
+                    Some((rloc, ip))
+                }
+            })
+            .map(|p| (p.0.clone(), *p.1))
+            .collect();
+
+        Ok(new_nodes)
     }
 }
 
@@ -161,4 +203,3 @@ impl Handler<OmrIp> for OtMonitor {
         self.get_omr_ip()
     }
 }
-
