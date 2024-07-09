@@ -10,10 +10,12 @@ use std::{net::Ipv6Addr, process::Command};
 use ipnet::Ipv6Net;
 
 mod broker;
+mod db;
 mod monitor;
 
 pub use broker::BrokerCoordinator;
-pub use monitor::{OtMonitor, OtMonitorError};
+pub(crate) use db::PlantDatabase;
+pub(crate) use monitor::{OtMonitor, OtMonitorError};
 
 pub trait OtClient: Send + Sync {
     fn get_child_ips(&self) -> Result<Vec<(String, Ipv6Addr)>, OtCliError>;

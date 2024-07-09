@@ -5,7 +5,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     log::info!("Initializing broker & starting task loops");
-    let mut broker = BrokerCoordinator::new().await?;
+    let mut broker = BrokerCoordinator::new("./test.db".into()).await?;
 
     broker.exec_task_loops().await;
 

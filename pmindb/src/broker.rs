@@ -5,8 +5,9 @@ use std::net::{Ipv6Addr, SocketAddr};
 use tokio::net::UdpSocket;
 
 use crate::{
+    db::DatabaseError,
     monitor::{CheckNewNode, GetNodeStatus, MonitorNetworkStatus, NodeRegistered, OmrIp},
-    OtCliClient, OtMonitor, OtMonitorError,
+    OtCliClient, OtMonitor, OtMonitorError, PlantDatabase,
 };
 
 use thiserror::Error;
@@ -25,16 +26,20 @@ pub enum BrokerCoordinatorError {
 
     #[error("AddrParse error")]
     AddrParse(#[from] std::net::AddrParseError),
+
+    #[error("Database Error")]
+    DatabaseError(#[from] DatabaseError),
 }
 
 pub struct BrokerCoordinator {
     monitor_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
     event_queue_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
+    plant_db: PlantDatabase,
     //socket: UdpSocket,
 }
 
 impl BrokerCoordinator {
-    pub async fn new() -> Result<Self, BrokerCoordinatorError> {
+    pub async fn new(path: std::path::PathBuf) -> Result<Self, BrokerCoordinatorError> {
         let ot_mon = OtMonitor::new(std::boxed::Box::new(OtCliClient));
 
         let omr_addr = ot_mon.get_omr_ip()?;
@@ -46,6 +51,7 @@ impl BrokerCoordinator {
         let mut broker = Self {
             monitor_handle: None,
             event_queue_handle: None,
+            plant_db: PlantDatabase::new(path)?,
         };
 
         broker.spawn_socket_listener(socket).await;
