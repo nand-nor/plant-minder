@@ -185,7 +185,17 @@ fn main() -> ! {
                             // TODO depending on the error, need to set handshake IPv6 to None
                             // until observer can reestablish conn; this will prevent the
                             // node from sending data until success is better guaranteed
-                            println!("Error sending {:?}", e);
+                            println!("Error sending, print all ips??? {:?}", e);
+                            //socket.close();
+
+                            critical_section::with(|cs| {
+                                let mut c = changed.borrow_ref_mut(cs);
+
+                                let addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6> =
+                                    openthread.ipv6_get_unicast_addresses();
+
+                                print_all_addresses(addrs);
+                            });
                         } else {
                             data = [colors::MISTY_ROSE];
                             led.write(brightness(gamma(data.iter().cloned()), 100)).ok();

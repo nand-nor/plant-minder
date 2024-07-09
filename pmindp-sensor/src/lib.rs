@@ -82,6 +82,15 @@ pub struct ATSAMD10<I2C: I2c> {
     pub i2c: I2C,
 }
 
+pub trait SensorReading {}
+
+impl SensorReading for ATSAMD10SensorReading {}
+
+pub struct ATSAMD10SensorReading {
+    pub moisture: u16,
+    pub temperature: f32,
+}
+
 // NOTE: can use something like this later
 // when ready to implement different soil
 // sensor types, for now only using ATSAMD10
