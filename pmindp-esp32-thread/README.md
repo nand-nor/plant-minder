@@ -1,5 +1,7 @@
 # `pmindp-esp32-thread` 
 
+Program esp32 dev boards to act as remote sensor nodes / CoAP servers for Observe option (very loosely based on RFC RFC 7641) 
+
 ## Build
 
 Requires nightly, `espflash` toolchain and `riscv32imac-unknown-none-elf` target
