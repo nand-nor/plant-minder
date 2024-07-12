@@ -38,6 +38,8 @@ pub enum OtCliError {
     OtClientError(String),
 }
 
+// Lazy implementation! Need to move to 
+// OtDbusClient impl ASAP
 pub struct OtCliClient;
 
 // TODO: to avoid ExitStatus(unix_wait_status(256)) implement backoff + retries !
@@ -69,13 +71,6 @@ impl OtCliClient {
                     let (rloc, rem) = l.split_at(idx);
                     let rem = rem.trim_start_matches(": ");
                     let rem = rem.trim();
-                    /*
-                     if let Ok(ip) = rem.parse::<std::net::Ipv6Addr>() {
-                        Some((rloc.to_string(), ip))
-                    } else {
-                        None
-                    }
-                     */
                     rem.parse::<Ipv6Addr>()
                         .ok()
                         .map(|ip| (rloc.to_string(), ip))

@@ -1,31 +1,29 @@
 # Plant-Minder (WIP)
-RPI4 + soil sensors to track when my plants need watering. This repo contains (mostly) all needed code for deployiong a simple plant monitoring system, using i2c soil sensors. The soil sensors can be controlled locally or remotely. Remote control is achieved via ESP32 microcontrollers running openthread, and local/wired control is done via i2c bus.  
+RPI4 + soil sensors to track when my plants need watering. This repo contains (mostly) all needed code for deployiong a simple plant monitoring system, which is a distributed system of microcontrollers programmed to control and report sensor data. Microcontrollers sense and report soil moisture data via a wireless mesh protocol, which is received by a raspberry pi. The pi has logic to determine soil conditions / trends and will ultimately alert me with a big obvious visual display whenever I need to water my plants.
 
 ## Description
-
-The Plant-Minder monitoring system uses a distributed system of microcontrollers to control and report sensor data. Microcontrollers sense and report soil moisture data voa a wireless mesh protocol, which is received by a raspberry pi. The pi has logic to determine soil conditions / trends and will ultimately alert me with a big obvious visual display whenever I need to water my plants.
 
 ```
          _            ________________________
         |            |                        |
-        |            |      TUI Front End     |
+        |   pmindd > |      TUI Front End     |
         |            |________________________|
         |                ^               |
     RPI |                | Events        | Subscribe 
         |             ___|_______________v____          __________
         |            |                        |        |          |
-        |            |     Broker / Backend   | <----> | Database |
-        |            |________________________|        |__________|
-        |                ^            |
+        |   pmindb > |     Broker / Backend   | <----> | Database |
+        |            |_________(CoAP)_________|        |__________|
+        |                ^            |         
         |             ___|____________v_______
         |            |                        |
-        |            |       openthread       |
+        | otbr-agent>|       openthread       |
         |_           |________________________|
                        ^          ^          ^             
                        | 802.15.4 |          |      
                        |          |          |                
                      __|___    ___|___    ___|___ 
-                    | ESP32|  | ESP32 |  | ESP32 |
+pmindp-esp32-thread>| ESP32|  | ESP32 |  | ESP32 | <-- CoAP
                      ------    -------    ------- 
                        ^          ^          ^
                        | i2c      |          |
@@ -33,39 +31,53 @@ The Plant-Minder monitoring system uses a distributed system of microcontrollers
                    | Sensor | | Sensor | | Sensor | 
                     --------   --------   --------  
 ```
+### Components / Workspace Design details
+The `pmindd` crate is where the front end/TUI rendering logic is defined (or, will be, when this is closer to being done). It will (probably) run as a daemon, interfacing with the broker layer to receive and render events (TBD if these will be separate services). Its main responsibility will be displaying sensor data as it is received from the mesh. It will do this very simply via TUI (most likely using something like `ratatui` )
 
-### Sensor control & reporting via esp32 to RPI
+The `pmindb` crate is a lib where the the broker/monitor layer is defined / implemented, which interfaces with the front end layer to provide the following responsibilities/functionality
+- node monitoring & management
+  - register new nodes as they come online (done automatically)
+  - manage when nodes drop off the network
+  - associate nodes that have had to reset themselves with their previous database entry (TBD)
+- manage socket(s) where sensor data is received 
+- push data into event queues and/or database (TBD what this piece will look like)
+- expose event queues for the TUI front end to subscribe 
+- provide requested info from the database 
 
-Remote microcontrollers are used to control and report sensor data to the RPI at configurable intervals via thread, a wireless mesh protocol that runs on top of 802.15.4. 
+The `otbr-agent` / `openthread` layer running on the pi is provided via a 3rd party binary; the pi must be set up to run the openthread stack via `otbr-agent`. More details / build steps available in [the parts list](./doc/part_list.md).
 
-This is done via esp32 dev boards that are configured to control the soil sensor as an i2c device as well as run the openthread stack. Sensed soil data is reported via openthread, which provides the transport layer for reporting sensor data to the RPI controller.
+The `pmindp-esp32-thread` crate contains all of the code needed to program microcontrollers to control the soil sensor & to respond to CoAP registration requests from an observer (done by the broker layer in `pmindb`). 
 
-Remote sensor/esp32 dev boards use `esp-hal` and `openthread` (via `esp-openthread` repo) to run bare metal as a minimal thread device (MTD). 
+### ESP32/Sensor Layer
 
-The `pmindp-esp32-thread` package contains all the code for building & flashing the esp32 dev boards with sensor devices, which only supports by espressif boards that have an 802.15.4 native radio (so currently on esp32-c6 and esp32-h2). There is no support for NCP or RCP modes in the `esp-openthread` repo. 
+Esp32 microcontrollers are used to control sensors and report data to the RPI via Thread, a wireless mesh protocol that runs on top of 802.15.4. Only 15.4 capable esp32 dev boards can be used; currently only esp32-c6 and esp32-h2 dev boards have an 802.15.4 native radio. 
 
-Also note that to support this deployment mode, the RPI must be configured to run the openthread stack with an RCP radio. The plant-minder system currently assumes that the RPI is acting as a border agent but future iterations may change this (there is no real requirement currently for bidirectional IP connectivity). 
+The `pmindp-esp32-thread` crate contains all the code for building & flashing the esp32 dev boards with attached sensors (see photos below for example). This code is built on top of / uses libraries from `esp-hal`, and the Thread capability is provided directly via the `openthread` stack, which we can call into from Rust via the `esp-openthread` repo. The boards run bare metal (via `esp-hal`) and have code to control the soil sensor as a simple i2c device. 
 
-For the soil sensor, the code currently only supports [Seesaw Capacitive moisture sensor (ATSAMD10)](https://www.adafruit.com/product/4026). Although I do have some plans to eventually  support other sensors (both different soil sensors and other sensor types like humidity / light/etc.)
+As mentioned above, Thread provides the transport layer for reporting sensor data to the RPI. The code in the `pmindp-esp32-thread` crate programs the boards to program a hardcoded operational dataset to auto-attach to the Thread mesh network as a minimal thread device (MTD). It is worth noting that there is no support for NCP or RCP modes in the `esp-openthread` repo currently (these boards dont need it), so no need for dealing with any spinel shennanigans. 
+
+For the soil sensor, the code currently only supports [Seesaw Capacitive moisture sensor (ATSAMD10)](https://www.adafruit.com/product/4026). Although I do have some plans to eventually  support other sensors (both different soil sensors and other sensor types like humidity / light/etc.).
 
 ![esp32-c6 controller with sensor on pins 5 & 6](./doc/sensor_esp32c6.jpg)
 ![esp32-c6 running on battery](./doc/battery.jpg)
 
-## Status
+To support this deployment mode, the RPI must be configured to run the openthread stack with an RCP radio. The plant-minder system currently assumes that the RPI is acting as a border agent but future iterations may change this (there is no real requirement currently for bidirectional IP connectivity). 
 
-In general I would estimate this is roughly at 35% complete. Lots of work is still needed. But basic sensor control / running openthread on the esp32 devices, and receiving reported sensor data on the pi is working.
+The Base i2c control for the ATSAMD10 chip ([seesaw soil sensor](https://www.adafruit.com/product/4026)) is defined in `pmindp-sensor`. This is where other sensor impls will go if/when I get to that. I also have another build configuration simple wired control example running on pi with TCA9548A i2c expander in `pmindd/src/bin/i2cmux_wired` (build the `plant-minder-wired` bin)
+(described at the end)
 
-### Sensor layer
-- Base i2c control for ATSAMD10 chip ([seesaw soil sensor](https://www.adafruit.com/product/4026)) in `pmindp-sensor`
-- simple wired control example running on pi with TCA9548A i2c expander in `pmindd` (build the `plant-minder-wired` bin)
-- Full build for wireless control via openthread is (mostly) finished, everything needed for programming esp32-c6 or esp32-h2 boards is in `pmindp-esp32-thread` 
+### Broker Layer 
+Under active development. A main goal for this layer is to provide node management/monitoring, so that the system is fault tolerant and even if remote nodes fall off the network they will be picked back up and register to report sensor data as soon as they rejoin the network. This layer also is meant to handle received data and generate relevant event notifications etc. based on top-level subscriptions, so that I can ideally support different front end apps if I ever get to that point. 
 
-A few other pieces are still needed here & this is under active development.  
+### Front end / TUI Layer
+I have completed 0% so far but for the first iteration I am targeting a simple TUI using `ratatui`. The current plan is to have this layer render the UI / data by subscribing to sensor events via the broker layer. It will also interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. This will not be populated dynamically, it will be as simple as possible. All I need this to do really is provide me with a visual cue that it is time to water my plants. 
 
 
-#### Future plans for sensor layer
+## Status / Goals / Hopes / Dreams
 
-One major goal is more complex OT device type support for remote sensor controllers. The `esp-openthread` repo currently only supports running esp32 boards as MTDs. Work is ongoing to add support for running as both FTDs and as SED/SSEDs
+In general I would estimate this is roughly at 55% complete. Lots of work is still needed. But basic sensor control / running openthread on the esp32 devices, and receiving reported sensor data on the pi is working.
+
+One major goal is more complex OT device type support for remote sensor controllers. The `esp-openthread` repo currently only supports running esp32 boards as MTDs. Work is ongoing to add support for running as both FTDs and as SED/SSEDs. Ideally these nodes will be able to run as FTDs when mains powered (so they can route packets for eachother) and SED (sleepy end device) waking up only to read and publish sensor data, for batter powered devices. 
 
 Another goal is to eventually support other moisture sensors
 - [Sunfounder capacitive moister sensor](https://www.digikey.com/en/products/detail/sunfounder/ST0160/22116813) 
@@ -73,11 +85,6 @@ Another goal is to eventually support other moisture sensors
 
 Additional sensor types will also eventually be added, targeting humidity co2 and light sensors.
 
-### Broker layer
-Under active development 
-
-### Front end / TUI rendering layer
-Not yet started
 
 ## Less fun build configuration: wired sensor builds with fully local sensor control & reporting on RPI (via TCA9548A) 
 
