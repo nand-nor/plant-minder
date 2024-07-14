@@ -9,7 +9,7 @@ use actix::Addr;
 
 use crate::{
     db::DatabaseError,
-    monitor::{CheckNewNode, GetNodeStatus, MonitorNetworkStatus, NodeRegistered, OmrIp},
+    monitor::{CheckNewNode, FreePort, GetNodeStatus, MonitorNetworkStatus, NodeRegistered, OmrIp},
     node::NodeHandler,
     OtCliClient, OtMonitor, OtMonitorError, PlantDatabase,
 };
@@ -60,12 +60,6 @@ impl BrokerCoordinator {
         let (stream_tx, stream_rx) = tokio::sync::mpsc::unbounded_channel();
         let (registration_tx, registration_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let omr_addr = ot_mon.get_omr_ip()?;
-        let addr = format!("[{}]:1212", omr_addr);
-        let addr: SocketAddrV6 = addr.parse()?;
-
-        let socket = UdpSocket::bind(addr).await?;
-
         let mut broker = Self {
             monitor_handle: None,
             db_conn_handle: None,
@@ -76,9 +70,7 @@ impl BrokerCoordinator {
         broker
             .spawn_db_conn_task(PlantDatabase::new(path)?, registration_rx)
             .await;
-        broker
-            .spawn_node_handling_task(node_rx, stream_tx.clone())
-            .await;
+        broker.spawn_node_handling_task(node_rx).await;
         broker
             .spawn_child_mon_task(25, ot_mon, node_tx, stream_tx, registration_tx)
             .await;
@@ -99,9 +91,9 @@ impl BrokerCoordinator {
     async fn spawn_node_handling_task(
         &mut self,
         mut receiver: tokio::sync::mpsc::UnboundedReceiver<NodeHandler>,
-        mut sender: tokio::sync::mpsc::UnboundedSender<
-            tokio::sync::mpsc::UnboundedReceiver<NodeEvent>,
-        >,
+        //mut sender: tokio::sync::mpsc::UnboundedSender<
+        //     tokio::sync::mpsc::UnboundedReceiver<NodeEvent>,
+        //>,
     ) {
         let handle = tokio::spawn(async move {
             let mut node_handles = vec![];
@@ -151,6 +143,10 @@ impl BrokerCoordinator {
                         node.data.temperature
                     );
                 }
+                NodeEvent::SocketError(addr) => {
+                    // TODO signal the monitor handle to evict this entry
+                    log::info!("Socket error on addr {:?}", addr);
+                }
                 _ => {
                     log::info!("Setup error");
                 }
@@ -185,11 +181,19 @@ impl BrokerCoordinator {
         let addr = format!("[{}]:{}", omr_addr, port);
         let addr: SocketAddrV6 = addr.parse()?;
 
-        let send_socket = UdpSocket::bind(addr).await?;
+        let send_socket = UdpSocket::bind(addr).await.map_err(|e| {
+            log::error!("Unable to bind to socket at addr {:?}", addr);
+            e
+        })?;
 
-        if let Err(e) = send_socket.send_to(&packet[..], send_addr).await {
-            log::error!("Error sending: {e:}");
-        }
+        // Allow this to fail, there will be retries
+        send_socket
+            .send_to(&packet[..], send_addr)
+            .await
+            .map_err(|e| {
+                log::error!("Error sending: {e:}");
+            })
+            .ok();
 
         // allow retries in case the radio is currently idle
         // not currently enabling rx_on_when_idle, should only
@@ -199,12 +203,15 @@ impl BrokerCoordinator {
                 while len == 0 {
                     // sleep a lil
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                    if let Err(e) = send_socket.send_to(&packet[..], send_addr).await {
+                    send_socket.send_to(&packet[..], send_addr).await.map_err(|e|{
                         log::error!("Error sending: {e:}");
-                    }
+                    }).ok();
                     // TODO its UDP so should we not use TCP for the initial handshake???
                     // need to look at CoAP spec
-                    (len, from) = send_socket.recv_from(&mut buffer).await?
+                    (len, from) = send_socket.recv_from(&mut buffer).await.map_err(|e|{
+                        log::error!("Error receiving from socket: {e:}");
+                        e
+                    })?;
                 }
                 log::info!("Got a response from {from:}, expected {send_addr:}");
 
@@ -229,10 +236,7 @@ impl BrokerCoordinator {
             //   db.insert_reading(reading, sensor_id)
             loop {
                 while let Some((eui, rcv)) = registration_rcvr.recv().await {
-                    log::trace!("Received a NodeEvent receiver {:?}", eui);
-                    //     tokio::spawn(
-                    //         async move { Self::process(UnboundedReceiverStream::new(rcv)).await },
-                    //    );
+                    log::trace!("Received a NodeEvent receiver {:?} addr {:?}", eui, rcv);
                 }
             }
 
@@ -277,6 +281,8 @@ impl BrokerCoordinator {
                 // yuck, need better logic here
                 if let Ok(nodes) = addr.send(CheckNewNode).await? {
                     if let Ok(omr_addr) = addr.send(OmrIp).await? {
+                        let addr_clone = addr.clone();
+
                         futures::stream::iter(nodes)
                             .enumerate()
                             .for_each(|(i, (rloc, ip))| {
@@ -286,11 +292,19 @@ impl BrokerCoordinator {
                                 let mut _registration_sender = registration_sender.clone();
 
                                 async move {
+                                    let free_port: u16 = {
+                                        if let Ok(Ok(free_port)) =
+                                            addr_clone.clone().send(FreePort).await
+                                        {
+                                            free_port
+                                        } else {
+                                            // TODO pick some random number ?
+                                            1213 + i as u16
+                                        }
+                                    };
                                     // TODO + rloc as u16 for port
                                     let res = BrokerCoordinator::coap_observer_register(
-                                        omr_addr,
-                                        ip,
-                                        1213 + i as u16,
+                                        omr_addr, ip, free_port,
                                     )
                                     .await
                                     .map_err(|e| {

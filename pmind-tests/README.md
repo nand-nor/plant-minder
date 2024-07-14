@@ -1,6 +1,6 @@
-# pmindd
+# Tests
 
-Currently just defines a bin for testing broker layer with Thread mesh, via the `plant-minder-mesh` binary
+Some binaries for testing broker layer with Thread mesh, via the `plant-minder-mesh` binary
 
 ## Build
 For building for the RPI 4 running raspbian kernel release `6.1.0-rpi7-rpi-2712` / kernel version `#1 SMP PREEMPT Debian 1:6.1.63-1+rpt1 (2023-11-24)`, I am using rust target `aarch64-unknown-linux-gnu`, and have separately installed the `aarch64-linux-gnu-gcc` toolchain (version 11.4.0), building on Ubuntu. 

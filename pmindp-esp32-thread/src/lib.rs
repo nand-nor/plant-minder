@@ -316,7 +316,7 @@ impl<'a> Esp32Platform<'a> {
     }
 
     pub fn reset(&mut self) {
-        //software_reset_cpu();
+        software_reset_cpu();
     }
 }
 

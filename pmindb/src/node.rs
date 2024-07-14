@@ -9,6 +9,7 @@ use tokio::{net::UdpSocket, sync::mpsc};
 #[derive(Debug)]
 pub enum NodeEvent {
     NodeTimeout(SocketAddrV6),
+    SocketError(SocketAddrV6),
     SetupError,
     // TODO someday make this a dynamic trait object SensorReading
     // sp this can support different sensors
@@ -54,22 +55,33 @@ impl NodeEventHandler {
                   _ = node_timeout => {
                     log::error!("Node timed out! No longer receiving data?");
                     _sender.send(NodeEvent::NodeTimeout(addr.clone())).ok();
+                    drop(sensor_read_socket);
                     break;
                   }
-                  Ok((len,from)) = sensor_read_socket.recv_from(&mut buffer) => {
-                        if len >= 6 {
-                            let mut moisture_s: [u8; 2] = [0u8; 2];
-                            moisture_s.copy_from_slice(&buffer[..2]);
-                            let moisture = u16::from_le_bytes(moisture_s);
-                            let mut temp_s: [u8; 4] = [0u8; 4];
-                            temp_s.copy_from_slice(&buffer[2..6]);
-                            let temperature = f32::from_le_bytes(temp_s);
-                            // TODO error handling
-                            _sender.send(NodeEvent::SensorReading(NodeSensorReading {
-                                addr: from,
-                                data: ATSAMD10SensorReading { moisture, temperature }
-                            })
-                            ).ok();
+                  res = sensor_read_socket.recv_from(&mut buffer) => {
+                        match res {
+                            Ok((len, from)) => {
+                                if len >= 6 {
+                                    let mut moisture_s: [u8; 2] = [0u8; 2];
+                                    moisture_s.copy_from_slice(&buffer[..2]);
+                                    let moisture = u16::from_le_bytes(moisture_s);
+                                    let mut temp_s: [u8; 4] = [0u8; 4];
+                                    temp_s.copy_from_slice(&buffer[2..6]);
+                                    let temperature = f32::from_le_bytes(temp_s);
+                                    // TODO error handling
+                                    _sender.send(NodeEvent::SensorReading(NodeSensorReading {
+                                        addr: from,
+                                        data: ATSAMD10SensorReading { moisture, temperature }
+                                    })
+                                    ).ok();
+                                }
+                            }
+                            _ => {
+                                log::error!("Socket error");
+                                _sender.send(NodeEvent::SocketError(addr.clone())).ok();
+                                drop(sensor_read_socket);
+                                break;
+                            }
                         }
                     }
                 };

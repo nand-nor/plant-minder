@@ -83,6 +83,14 @@ impl OtMonitor {
     pub fn evict_node(&mut self, node: Ipv6Addr) -> Result<String, OtMonitorError> {
         todo!()
     }
+
+    // TODO this needs to be a dynamic check, just increment the port each time for now
+    // but will need to track ports used by each node and free them up as they are
+    // evicted
+    pub fn get_free_port(&mut self) -> Result<u16, OtMonitorError> {
+        let len = self.nodes.len();
+        Ok(1213 + len as u16)
+    }
 }
 
 impl Actor for OtMonitor {
@@ -121,6 +129,11 @@ type OmrResponse = Result<Ipv6Addr, OtMonitorError>;
 pub struct NodeRegistered(pub (String, Ipv6Addr));
 
 type NodeRegResponse = Result<(), OtMonitorError>;
+
+#[derive(Message)]
+#[rtype(result = "FreePortResponse")]
+pub struct FreePort;
+type FreePortResponse = Result<u16, OtMonitorError>;
 
 impl Handler<GetNodeStatus> for OtMonitor {
     type Result = NodeStatusResponse;
@@ -192,5 +205,13 @@ impl Handler<OmrIp> for OtMonitor {
 
     fn handle(&mut self, _msg: OmrIp, _ctx: &mut Self::Context) -> Self::Result {
         self.get_omr_ip()
+    }
+}
+
+impl Handler<FreePort> for OtMonitor {
+    type Result = FreePortResponse;
+
+    fn handle(&mut self, _msg: FreePort, _ctx: &mut Self::Context) -> Self::Result {
+        self.get_free_port()
     }
 }
