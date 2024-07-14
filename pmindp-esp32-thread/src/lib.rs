@@ -35,18 +35,16 @@ use pmindp_sensor::ATSAMD10;
 use critical_section::Mutex;
 use esp_ieee802154::{Config, Ieee802154};
 use esp_openthread::{
-     NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadDeviceRole,
+    NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadDeviceRole,
     ThreadTimestamp,
 };
 
-use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 use coap_lite::{CoapRequest, Packet};
 use core::borrow::BorrowMut;
 use pmindp_sensor::SoilSensorError;
-
+use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
 pub const BOUND_PORT: u16 = 1212;
-
 
 #[global_allocator]
 static ALLOC: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -56,7 +54,6 @@ pub fn init_heap() {
     static mut HEAP: [u8; SIZE] = [0; SIZE];
     unsafe { ALLOC.init(addr_of_mut!(HEAP) as *mut u8, SIZE) }
 }
-
 
 pub struct Esp32Platform<'a> {
     led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
@@ -87,7 +84,7 @@ impl<'a> Esp32Platform<'a> {
         clocks: &Clocks,
         systimer: Alarm<Target, Blocking, 0>,
         i2c: impl Peripheral<P = I2C0> + 'a,
-        timg0: TimerGroup<TIMG0, Blocking>, 
+        timg0: TimerGroup<TIMG0, Blocking>,
         rmt: impl Peripheral<P = RMT> + 'a,
         led_pin: GpioPin<8>,
         sda_pin: GpioPin<5>,
@@ -124,7 +121,7 @@ impl<'a> Esp32Platform<'a> {
 
         Self {
             led,
-            openthread, 
+            openthread,
             sensor: Mutex::new(RefCell::new(sensor)),
             delay: Delay::new(&clocks),
         }
@@ -200,8 +197,8 @@ impl<'a> Esp32Platform<'a> {
         let mut data;
         let mut eui: [u8; 6] = [0u8; 6];
 
-        let mut observer_addr: Option<no_std_net::Ipv6Addr> = None;
-        // This block is needed to constrain how long the immutable borrow of openthread, 
+        let mut observer_addr: Option<(no_std_net::Ipv6Addr, u16)> = None;
+        // This block is needed to constrain how long the immutable borrow of openthread,
         // which happens when the socket object is created, exists
         {
             let mut socket = self.openthread.get_udp_socket::<512>().unwrap();
@@ -218,7 +215,7 @@ impl<'a> Esp32Platform<'a> {
                     .write(brightness(gamma(data.iter().cloned()), 50))
                     .unwrap();
 
-                if let Some(observer) = observer_addr {
+                if let Some((observer, port)) = observer_addr {
                     if let Ok(Some((moisture, temp))) = self.sensor_read() {
                         log::info!("Moisture: {:?}, temp: {:?}", moisture, temp);
 
@@ -231,11 +228,9 @@ impl<'a> Esp32Platform<'a> {
                         match role {
                             ThreadDeviceRole::Detached
                             | ThreadDeviceRole::Unknown
-                            | ThreadDeviceRole::Disabled => {
-
-                            }
+                            | ThreadDeviceRole::Disabled => {}
                             _ => {
-                                if let Err(e) = socket.send(observer, BOUND_PORT, &send_data_buf) {
+                                if let Err(e) = socket.send(observer, port, &send_data_buf) {
                                     // TODO depending on the error, need to set handshake IPv6 to None
                                     // until observer can reestablish conn; this will prevent the
                                     // node from sending data until success is better guaranteed
@@ -245,7 +240,6 @@ impl<'a> Esp32Platform<'a> {
                                     );
                                     socket.close().ok();
                                     break;
-
                                 } else {
                                     data = [colors::MISTY_ROSE];
                                     self.led
@@ -264,26 +258,36 @@ impl<'a> Esp32Platform<'a> {
 
                         let method = request.get_method().clone();
                         let path = request.get_path();
-                        let message_id = request.message.header.message_id;
+                        // TODO ! Need better solution
+                        let port_req = request.message.header.message_id;
+                        //let token = request.get_token();
                         log::info!(
-                            "Received CoAP request message ID '{} {:?} {}' from {}",
-                            message_id, method, path, from
+                            "Received CoAP request '{} {:?} {}' from {}",
+                            port_req,
+                            method,
+                            path,
+                            from
                         );
 
                         let mut response = request.response.unwrap();
-                        response.message.payload = b"beefface authenticate!".to_vec();
+                        self.openthread.get_eui(&mut eui);
+                        response.message.payload = eui.to_vec();
+
+                        //response.message.payload = b"beefface authenticate!".to_vec();
 
                         let packet = response.message.to_bytes().unwrap();
-                        socket.send(from, BOUND_PORT + 1, packet.as_slice()).ok();
+                        socket.send(from, port_req, packet.as_slice()).ok();
 
                         let addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6> =
-                        self.openthread.ipv6_get_unicast_addresses();
+                            self.openthread.ipv6_get_unicast_addresses();
                         print_all_addresses(addrs);
                         let role = self.openthread.get_device_role();
-                        self.openthread.get_eui(&mut eui);
-                        log::info!("Role: {:?}, Eui {:#X?}", role, eui);
+                        log::info!("Role: {:?}, Eui {:#X?} port {:?}", role, eui, port_req);
 
                         drop(packet);
+
+                        observer_addr = Some((from, port_req));
+                        log::info!("Handshake complete");
                     } else {
                         log::info!(
                             "received {:02x?} from {:?} port {}",
@@ -292,17 +296,10 @@ impl<'a> Esp32Platform<'a> {
                             port
                         );
 
-                        // TODO some simple handshake auth
-                       // if buffer[0] == 0xbe {
-                       //     log::info!("Beef face!");
-                       // }
                         socket
-                            .send(from, BOUND_PORT + 1, b"beefface authenticate!")
+                            .send(from, BOUND_PORT, b"beefface authenticate!")
                             .unwrap();
                     }
-
-                    observer_addr = Some(from);
-                    log::info!("Handshake complete");
                 }
 
                 data = [colors::MEDIUM_ORCHID];
@@ -310,7 +307,7 @@ impl<'a> Esp32Platform<'a> {
                     .write(brightness(gamma(data.iter().cloned()), 50))
                     .unwrap();
             }
-            // Drop the socket 
+            // Drop the socket
             drop(socket);
         }
         log::error!("Socket error, most likely node has dropped from the network");
@@ -319,10 +316,9 @@ impl<'a> Esp32Platform<'a> {
     }
 
     pub fn reset(&mut self) {
-        software_reset_cpu();
+        //software_reset_cpu();
     }
 }
-
 
 #[handler]
 pub fn SENSOR_TIMER_TG0_T0_LEVEL() {

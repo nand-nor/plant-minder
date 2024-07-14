@@ -70,20 +70,6 @@ impl OtMonitor {
             .collect())
     }
 
-    pub fn get_current_tracked_nodes(&self) -> Vec<Ipv6Addr> {
-        self.nodes.clone().into_values().collect()
-    }
-
-    pub fn store_nodes(&mut self, nodes: Vec<(String, Ipv6Addr)>) -> Result<(), OtMonitorError> {
-        nodes.iter().for_each(|(rloc, addr)| {
-            self.nodes
-                .entry(rloc.clone())
-                .and_modify(|a| *a = *addr)
-                .or_insert(*addr);
-        });
-        Ok(())
-    }
-
     pub fn node_registered(&mut self, node: (String, Ipv6Addr)) -> Result<(), OtMonitorError> {
         log::debug!("Registering node {} : {}", node.0, node.1);
         self.nodes
@@ -91,6 +77,11 @@ impl OtMonitor {
             .and_modify(|a| *a = node.1)
             .or_insert(node.1);
         Ok(())
+    }
+
+    #[allow(unused)]
+    pub fn evict_node(&mut self, node: Ipv6Addr) -> Result<String, OtMonitorError> {
+        todo!()
     }
 }
 

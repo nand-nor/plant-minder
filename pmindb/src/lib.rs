@@ -12,6 +12,7 @@ use ipnet::Ipv6Net;
 mod broker;
 mod db;
 mod monitor;
+mod node;
 
 pub use broker::BrokerCoordinator;
 pub(crate) use db::PlantDatabase;
@@ -38,7 +39,7 @@ pub enum OtCliError {
     OtClientError(String),
 }
 
-// Lazy implementation! Need to move to 
+// Lazy implementation! Need to move to
 // OtDbusClient impl ASAP
 pub struct OtCliClient;
 

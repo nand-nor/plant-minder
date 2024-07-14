@@ -1,15 +1,21 @@
 use actix::{Actor, MailboxError};
 use coap_lite::{CoapRequest, ObserveOption, RequestType};
 use futures::prelude::*;
-use std::net::{Ipv6Addr, SocketAddr};
+use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
 use tokio::net::UdpSocket;
+use tokio_stream::wrappers::UnboundedReceiverStream;
+
+use actix::Addr;
 
 use crate::{
     db::DatabaseError,
     monitor::{CheckNewNode, GetNodeStatus, MonitorNetworkStatus, NodeRegistered, OmrIp},
+    node::NodeHandler,
     OtCliClient, OtMonitor, OtMonitorError, PlantDatabase,
 };
 
+use crate::node::NodeEvent;
+use pmindp_sensor::ATSAMD10SensorReading;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -31,10 +37,18 @@ pub enum BrokerCoordinatorError {
     DatabaseError(#[from] DatabaseError),
 }
 
+pub type Eui = [u8; 6];
+
 pub struct BrokerCoordinator {
     monitor_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
-    event_queue_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
-    plant_db: PlantDatabase,
+    db_conn_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
+    nodes_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
+    sensor_stream_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
+    //plant_db: PlantDatabase,
+
+    //receiver: tokio::sync::mpsc::UnboundedReceiver<Addr<NodeHandler>>,
+    // node_handles: Vec<Addr<NodeHandler>>,
+
     //socket: UdpSocket,
 }
 
@@ -42,35 +56,114 @@ impl BrokerCoordinator {
     pub async fn new(path: std::path::PathBuf) -> Result<Self, BrokerCoordinatorError> {
         let ot_mon = OtMonitor::new(std::boxed::Box::new(OtCliClient));
 
+        let (node_tx, node_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (stream_tx, stream_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (registration_tx, registration_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let omr_addr = ot_mon.get_omr_ip()?;
         let addr = format!("[{}]:1212", omr_addr);
-        let addr: std::net::SocketAddrV6 = addr.parse()?;
+        let addr: SocketAddrV6 = addr.parse()?;
 
         let socket = UdpSocket::bind(addr).await?;
 
         let mut broker = Self {
             monitor_handle: None,
-            event_queue_handle: None,
-            plant_db: PlantDatabase::new(path)?,
+            db_conn_handle: None,
+            nodes_handle: None,
+            sensor_stream_handle: None,
         };
 
-        broker.spawn_socket_listener(socket).await;
-        broker.spawn_child_mon_task(25, ot_mon).await;
+        broker
+            .spawn_db_conn_task(PlantDatabase::new(path)?, registration_rx)
+            .await;
+        broker
+            .spawn_node_handling_task(node_rx, stream_tx.clone())
+            .await;
+        broker
+            .spawn_child_mon_task(25, ot_mon, node_tx, stream_tx, registration_tx)
+            .await;
+        broker.spawn_sensor_streams_handle(stream_rx).await;
 
         Ok(broker)
     }
 
     pub async fn exec_task_loops(&mut self) {
         log::debug!("Starting event and monitor loop tasks...");
-        self.event_queue_handle.take().unwrap().await.ok();
+        self.db_conn_handle.take().unwrap().await.ok();
         self.monitor_handle.take().unwrap().await.ok();
+        self.nodes_handle.take().unwrap().await.ok();
+        self.sensor_stream_handle.take().unwrap().await.ok();
     }
 
-    pub async fn coap_observer_register(
+    // TODO this will eventually pipe actors to the monitor task?
+    async fn spawn_node_handling_task(
+        &mut self,
+        mut receiver: tokio::sync::mpsc::UnboundedReceiver<NodeHandler>,
+        mut sender: tokio::sync::mpsc::UnboundedSender<
+            tokio::sync::mpsc::UnboundedReceiver<NodeEvent>,
+        >,
+    ) {
+        let handle = tokio::spawn(async move {
+            let mut node_handles = vec![];
+            loop {
+                while let Some(mut node) = receiver.recv().await {
+                    // TODO going to need to iterate through this and drop dead nodes at some point
+                    node_handles.push(node);
+                }
+            }
+        });
+        self.nodes_handle = Some(handle);
+    }
+
+    async fn spawn_sensor_streams_handle(
+        &mut self,
+        mut receiver: tokio::sync::mpsc::UnboundedReceiver<
+            tokio::sync::mpsc::UnboundedReceiver<NodeEvent>,
+        >,
+    ) {
+        let handle = tokio::spawn(async move {
+            loop {
+                while let Some(mut rcv) = receiver.recv().await {
+                    log::trace!("Received a NodeEvent receiver");
+                    tokio::spawn(
+                        async move { Self::process(UnboundedReceiverStream::new(rcv)).await },
+                    );
+                }
+            }
+        });
+        self.sensor_stream_handle = Some(handle);
+    }
+
+    async fn process(mut stream: UnboundedReceiverStream<NodeEvent>) {
+        log::trace!("Processing NodeEvent receiver as a stream");
+        while let Some(msg) = stream.next().await {
+            match msg {
+                NodeEvent::NodeTimeout(addr) => {
+                    // TODO signal the monitor handle to evict this entry
+                    log::info!("Node {:?} timed out", addr);
+                }
+                NodeEvent::SensorReading(node) => {
+                    // TODO hook this into something that exposes the data to a subscriber and/or database
+                    log::info!(
+                        "Reading! from {:?} moisture {:?} temp {:?}",
+                        node.addr,
+                        node.data.moisture,
+                        node.data.temperature
+                    );
+                }
+                _ => {
+                    log::info!("Setup error");
+                }
+            }
+        }
+        log::info!("Stream processing func closing");
+    }
+
+    async fn coap_observer_register(
         omr_addr: Ipv6Addr,
         ip_addr: Ipv6Addr,
         port: u16,
-    ) -> Result<(), BrokerCoordinatorError> {
+    ) -> Result<Option<(SocketAddrV6, Eui)>, BrokerCoordinatorError> {
         log::info!("Registering {:?}", ip_addr);
         let mut request: CoapRequest<SocketAddr> = CoapRequest::new();
         let mut buffer = [0u8; 512];
@@ -78,15 +171,19 @@ impl BrokerCoordinator {
         request.set_method(RequestType::Get);
         request.set_path("/soilmoisture");
         request.message.set_token(vec![0xfa, 0xce, 0xbe, 0xef]);
+
+        // TODO! Here we are using the message_id field to
+        // tell the node what port we want to receive sensor data on
+        request.message.header.message_id = port;
         request.set_observe_flag(ObserveOption::Register);
         let packet = request.message.to_bytes()?;
 
         let ip_w_port = format!("[{}]:1212", ip_addr);
         // fix this later
-        let send_addr: std::net::SocketAddrV6 = ip_w_port.parse()?;
+        let send_addr: SocketAddrV6 = ip_w_port.parse()?;
 
         let addr = format!("[{}]:{}", omr_addr, port);
-        let addr: std::net::SocketAddrV6 = addr.parse()?;
+        let addr: SocketAddrV6 = addr.parse()?;
 
         let send_socket = UdpSocket::bind(addr).await?;
 
@@ -109,44 +206,54 @@ impl BrokerCoordinator {
                     // need to look at CoAP spec
                     (len, from) = send_socket.recv_from(&mut buffer).await?
                 }
-                log::info!("Got a response from {from:}");
+                log::info!("Got a response from {from:}, expected {send_addr:}");
 
+                let mut eui: Eui = [0u8; 6];
+                if len >= 6 {
+                    eui.copy_from_slice(&buffer[..6]);
+                }
+                Ok(Some((addr, eui)))
             }
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {
-
+                Ok(None)
             }
-        };
-
-        Ok(())
+        }
     }
 
-    pub async fn spawn_socket_listener(&mut self, socket: UdpSocket) {
+    async fn spawn_db_conn_task(
+        &mut self,
+        db: PlantDatabase,
+        mut registration_rcvr: tokio::sync::mpsc::UnboundedReceiver<(Eui, SocketAddrV6)>,
+    ) {
         let handle = tokio::spawn(async move {
-            let mut buffer = [0u8; 512];
-            log::info!("Setting up listener on socket {:?}", socket);
-
-            while let Ok((len, src)) = socket.recv_from(&mut buffer).await {
-                if len > 0 {
-                    let mut moisture_s: [u8; 2] = [0u8; 2];
-                    moisture_s.copy_from_slice(&buffer[..2]);
-                    let moisture = u16::from_le_bytes(moisture_s);
-                    let mut temp_s: [u8; 4] = [0u8; 4];
-                    temp_s.copy_from_slice(&buffer[2..6]);
-                    let temp = f32::from_le_bytes(temp_s);
-
-                    // TODO write these to an event queue
-                    println!("{:?} sent moisture: {:?} temp {:?}", src, moisture, temp);
+            //   db.insert_reading(reading, sensor_id)
+            loop {
+                while let Some((eui, rcv)) = registration_rcvr.recv().await {
+                    log::trace!("Received a NodeEvent receiver {:?}", eui);
+                    //     tokio::spawn(
+                    //         async move { Self::process(UnboundedReceiverStream::new(rcv)).await },
+                    //    );
                 }
             }
+
             log::warn!("Socket listener task exiting");
             // to do signal to broker to retstart this task ?
             Ok(())
         });
 
-        self.event_queue_handle = Some(handle);
+        self.db_conn_handle = Some(handle);
     }
 
-    pub async fn spawn_child_mon_task(&mut self, poll_interval: u64, ot_mon: OtMonitor) {
+    async fn spawn_child_mon_task(
+        &mut self,
+        poll_interval: u64,
+        ot_mon: OtMonitor,
+        mut node_sender: tokio::sync::mpsc::UnboundedSender<NodeHandler>,
+        mut stream_sender: tokio::sync::mpsc::UnboundedSender<
+            tokio::sync::mpsc::UnboundedReceiver<NodeEvent>,
+        >,
+        mut registration_sender: tokio::sync::mpsc::UnboundedSender<(Eui, SocketAddrV6)>,
+    ) {
         let addr = ot_mon.start();
         let poll = tokio::time::Duration::from_secs(poll_interval);
         let handle = tokio::spawn(async move {
@@ -154,6 +261,7 @@ impl BrokerCoordinator {
                 "Setting up node / network monitor task to check every {:?} seconds",
                 poll_interval
             );
+
             loop {
                 log::debug!("Polling for network change");
 
@@ -173,6 +281,10 @@ impl BrokerCoordinator {
                             .enumerate()
                             .for_each(|(i, (rloc, ip))| {
                                 let addr_clone = addr.clone();
+                                let mut _node_sender = node_sender.clone();
+                                let mut _stream_sender = stream_sender.clone();
+                                let mut _registration_sender = registration_sender.clone();
+
                                 async move {
                                     // TODO + rloc as u16 for port
                                     let res = BrokerCoordinator::coap_observer_register(
@@ -185,12 +297,40 @@ impl BrokerCoordinator {
                                         log::error!("failure to register coap observer {e:}");
                                     });
 
-                                    if res.is_ok() {
+                                    if let Ok(Some((addr, eui))) = res {
                                         addr_clone
                                             .send(NodeRegistered((rloc, ip)))
                                             .await
                                             .map_err(|e| log::error!("Failure to reg node {e:}"))
                                             .ok();
+
+                                        // TODO send receiver to monitor to get rid of stored addr??
+                                        //  let (sender, receiver) =
+                                        //    tokio::sync::mpsc::unbounded_channel();
+                                        let (sender, receiver) =
+                                            tokio::sync::mpsc::unbounded_channel();
+
+                                        let new_node = NodeHandler::new(addr.clone(), sender).await;
+                                        // new_node.handler.handler.await;
+                                        // send the actor to the task managing those objects
+                                        if let Err(e) = _node_sender.send(new_node) {
+                                            // TODO
+                                            log::error!("failure to send new node handler {e:}");
+                                        }
+
+                                        // Send the sensor data source to the task managing those streams
+                                        if let Err(e) = _stream_sender.send(receiver) {
+                                            // TODO
+                                            log::error!("failure to send sensor stream {e:}");
+                                        }
+
+                                        // Send the sensor data source to the task managing those streams
+                                        if let Err(e) = _registration_sender.send((eui, addr)) {
+                                            // TODO
+                                            log::error!("failure to send sensor stream {e:}");
+                                        }
+                                    } else {
+                                        log::warn!("Registration failed, need to retry");
                                     }
                                 }
                             })
@@ -232,11 +372,18 @@ impl BrokerCoordinator {
 
 impl Drop for BrokerCoordinator {
     fn drop(&mut self) {
-        if let Some(events) = &self.event_queue_handle {
+        if let Some(events) = &self.db_conn_handle {
             events.abort();
         }
         if let Some(mon) = &self.monitor_handle {
             mon.abort();
+        }
+        if let Some(nodes) = &self.nodes_handle {
+            nodes.abort();
+        }
+
+        if let Some(streams) = &self.sensor_stream_handle {
+            streams.abort();
         }
     }
 }

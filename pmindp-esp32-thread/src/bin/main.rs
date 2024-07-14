@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-
 use esp_backtrace as _;
 
 use esp_hal::{
@@ -33,7 +32,6 @@ fn main() -> ! {
     let mut ieee802154 = Ieee802154::new(peripherals.IEEE802154, &mut peripherals.RADIO_CLK);
     let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
-
     let mut platform = Esp32Platform::new(
         &mut ieee802154,
         &clocks,
@@ -55,9 +53,8 @@ fn main() -> ! {
     );
 
     loop {
-        
         // this will enter a loop where if it ever breaks,
-        // we need to do a full reset 
+        // we need to do a full reset
         // TODO find way to recover without resetting
         if platform.coap_server_event_loop().is_err() {
             println!("Unrecoverable error, resetting cpu!");

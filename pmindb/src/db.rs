@@ -1,3 +1,4 @@
+#![allow(unused)]
 use pmindp_sensor::{ATSAMD10SensorReading, SensorReading};
 use rusqlite::{params, Connection, Error as SqliteErr, Result};
 use thiserror::Error;
