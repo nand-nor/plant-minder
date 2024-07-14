@@ -25,7 +25,7 @@ pub struct NodeEventHandler {
     _handler: tokio::task::JoinHandle<()>,
 }
 
-const DEFAULT_TIMEOUT: u64 = 240;
+const DEFAULT_TIMEOUT: u64 = 100;
 
 impl NodeEventHandler {
     async fn new(addr: SocketAddrV6, sender: mpsc::UnboundedSender<NodeEvent>) -> Self {

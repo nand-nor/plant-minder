@@ -5,16 +5,3 @@ edition = "2021"
 authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 
 [dependencies]
-pmindb = {  path="../pmindb"}
-pmindp-sensor = {  path="../pmindp-sensor", optional=true}
-tokio = {version = "1.37.0", features=["rt-multi-thread", "rt", "macros", "time", "sync"]}
-rppal = {version="0.17.1"}
-embedded-hal = {version="1.0"}
-embedded-hal-async = {version="1.0.0", optional=true}
-linux-embedded-hal = {version = "0.4.0", default-features=false, features=["async-tokio", "i2c"], optional=true}
-xca9548a = {version="0.2.1", git="https://github.com/nand-nor/xca9548a-rs", branch="add/embedded-hal-async", features=["embedded-hal-async"], optional=true}
-thiserror = {version="1.0.59", optional=true}
-coap-lite = {version="0.12.0", features=["udp"],default-features=false, optional=true}
-actix = {version = "0.13.5", features=["macros"], optional=true}
-env_logger = {version= "0.11.3"}
-log = {version= "0.4.21"}
