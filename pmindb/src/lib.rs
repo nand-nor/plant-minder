@@ -34,10 +34,11 @@ mod node;
 
 mod client;
 
-pub use broker::BrokerCoordinator;
+pub use broker::{BrokerCoordinator, BrokerCoordinatorError};
 pub(crate) use client::{OtCliClient, OtClient, OtClientError};
 pub(crate) use db::PlantDatabaseHandler;
 pub(crate) use monitor::{OtMonitor, OtMonitorError};
+pub use node::{NodeEvent, NodeSensorReading, Registration};
 
 /// Extended Unique Identifier: each node should have a unique EUI that
 /// is always the same even across node cpu resets / power events

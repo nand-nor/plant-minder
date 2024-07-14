@@ -1,3 +1,4 @@
 [workspace]
-members = ["pmindd", "pmindb", "pmindp-sensor", "pmindp-esp32-thread","pmind-tests"]
+members = ["pmindd", "pmindb", "pmindp-sensor", "pmind-tests"]
+exclude = ["pmindp-esp32-thread"]
 resolver = "2"

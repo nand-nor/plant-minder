@@ -85,7 +85,7 @@ pub struct ATSAMD10<I2C: I2c> {
 pub trait SensorReading {}
 
 impl SensorReading for ATSAMD10SensorReading {}
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ATSAMD10SensorReading {
     pub moisture: u16,
     pub temperature: f32,
