@@ -6,8 +6,6 @@
 
 extern crate alloc;
 
-//mod sensor;
-
 use core::{cell::RefCell, pin::pin, ptr::addr_of_mut};
 
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
@@ -260,7 +258,6 @@ impl<'a> Esp32Platform<'a> {
                         let path = request.get_path();
                         // TODO ! Need better solution
                         let port_req = request.message.header.message_id;
-                        //let token = request.get_token();
                         log::info!(
                             "Received CoAP request '{} {:?} {}' from {}",
                             port_req,
@@ -272,8 +269,6 @@ impl<'a> Esp32Platform<'a> {
                         let mut response = request.response.unwrap();
                         self.openthread.get_eui(&mut eui);
                         response.message.payload = eui.to_vec();
-
-                        //response.message.payload = b"beefface authenticate!".to_vec();
 
                         let packet = response.message.to_bytes().unwrap();
                         socket.send(from, port_req, packet.as_slice()).ok();

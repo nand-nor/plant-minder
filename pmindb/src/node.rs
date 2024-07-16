@@ -18,7 +18,7 @@ pub enum NodeEvent {
 
 #[derive(Debug)]
 pub struct NodeSensorReading {
-    pub addr: SocketAddr,
+    pub addr: SocketAddrV6,
     pub data: ATSAMD10SensorReading,
 }
 
@@ -35,16 +35,20 @@ impl NodeEventHandler {
             let timeout = std::time::Duration::from_secs(DEFAULT_TIMEOUT);
 
             let sensor_read_socket = {
-                if let Ok(sensor_read_socket) = UdpSocket::bind(addr.clone()).await {
+                if let Ok(sensor_read_socket) = UdpSocket::bind(addr).await {
                     sensor_read_socket
                 } else {
+                    log::error!("Unable to bind to socket {addr:}");
                     _sender.send(NodeEvent::SetupError).ok();
                     return;
                 }
             };
 
             let mut buffer = [0u8; 512];
-
+            // Update this in the socket poll loop to make sure that when we report
+            // a node event (error) with an address, we return the actual node ip not the
+            // addr we used to open a socket
+            let mut node_addr = addr;
             loop {
                 let node_timeout = tokio::time::sleep(timeout);
                 tokio::select! {
@@ -54,13 +58,20 @@ impl NodeEventHandler {
                   }
                   _ = node_timeout => {
                     log::error!("Node timed out! No longer receiving data?");
-                    _sender.send(NodeEvent::NodeTimeout(addr.clone())).ok();
+                    _sender.send(NodeEvent::NodeTimeout(node_addr)).ok();
                     drop(sensor_read_socket);
                     break;
                   }
                   res = sensor_read_socket.recv_from(&mut buffer) => {
                         match res {
                             Ok((len, from)) => {
+                                // This should always be true unless we get some bad actor sending
+                                // us non-ipv6 traffic at this port
+                                if let SocketAddr::V6(a) = from {
+                                    node_addr = a;
+                                } else {
+                                    log::warn!("Non-ipv6 address sent data to our sensor port {from:}");
+                                }
                                 if len >= 6 {
                                     let mut moisture_s: [u8; 2] = [0u8; 2];
                                     moisture_s.copy_from_slice(&buffer[..2]);
@@ -70,15 +81,16 @@ impl NodeEventHandler {
                                     let temperature = f32::from_le_bytes(temp_s);
                                     // TODO error handling
                                     _sender.send(NodeEvent::SensorReading(NodeSensorReading {
-                                        addr: from,
+                                        addr: node_addr,
                                         data: ATSAMD10SensorReading { moisture, temperature }
                                     })
                                     ).ok();
                                 }
+
                             }
                             _ => {
                                 log::error!("Socket error");
-                                _sender.send(NodeEvent::SocketError(addr.clone())).ok();
+                                _sender.send(NodeEvent::SocketError(node_addr)).ok();
                                 drop(sensor_read_socket);
                                 break;
                             }
