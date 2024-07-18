@@ -11,11 +11,11 @@ use esp_hal::{
     system::SystemControl,
     timer::{
         systimer::SystemTimer,
-        timg::{TimerGroup, TimerInterrupts},
+        timg::TimerGroup,
     },
 };
 use esp_println::println;
-use pmindp_esp32_thread::{init_heap, Esp32Platform, SENSOR_TIMER_TG0_T0_LEVEL};
+use pmindp_esp32_thread::{init_heap, Esp32Platform};
 
 use esp_ieee802154::Ieee802154;
 
@@ -40,10 +40,6 @@ fn main() -> ! {
         TimerGroup::new(
             peripherals.TIMG0,
             &clocks,
-            Some(TimerInterrupts {
-                timer0: Some(SENSOR_TIMER_TG0_T0_LEVEL),
-                ..Default::default()
-            }),
         ),
         peripherals.RMT,
         io.pins.gpio8,

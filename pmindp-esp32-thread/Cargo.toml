@@ -5,9 +5,9 @@ edition = "2021"
 authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 
 [dependencies]
-esp-hal = {version= "0.18.0", git = "https://github.com/esp-rs/esp-hal.git"}
-esp-backtrace = { version="0.12.1", git = "https://github.com/esp-rs/esp-hal.git", features = ["panic-handler", "exception-handler", "println"]}
-esp-println       = { version= "0.9.1", git = "https://github.com/esp-rs/esp-hal.git", features = ["log"]}
+esp-hal = {version= "0.19.0", git = "https://github.com/esp-rs/esp-hal.git"}
+esp-backtrace = { version="0.13.0", git = "https://github.com/esp-rs/esp-hal.git", features = ["panic-handler", "exception-handler", "println"]}
+esp-println       = { version= "0.10.0", git = "https://github.com/esp-rs/esp-hal.git", features = ["log"]}
 esp-ieee802154 = {version= "0.1.0", git = "https://github.com/esp-rs/esp-hal.git"}
 esp-hal-smartled = { git = "https://github.com/esp-rs/esp-hal.git"}
 esp-alloc = { version="0.4.0", git = "https://github.com/esp-rs/esp-hal.git"} 
@@ -16,8 +16,8 @@ heapless = {version= "0.8.0"}
 no-std-net = {version= "0.6.0"}
 critical-section = {version= "1.1.0"}
 smart-leds = {version= "0.4.0" }
-esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", rev="1c63ed6"}
-pmindp-sensor = {  path="../pmindp-sensor", features=["no_std_thread"]}
+esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", rev="d18b689"}
+pmindp-sensor = {  path="../pmindp-sensor"}
 coap-lite = {version="0.12.0", features=["udp"],default-features=false}
 
 [features]

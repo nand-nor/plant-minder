@@ -91,9 +91,9 @@ impl<'a> Esp32Platform<'a> {
     ) -> Self {
         let openthread = esp_openthread::OpenThread::new(ieee802154, systimer, Rng::new(rng));
         #[cfg(not(feature = "esp32h2"))]
-        let rmt = Rmt::new(rmt, 80.MHz(), clocks, None).unwrap();
+        let rmt = Rmt::new(rmt, 80.MHz(), clocks).unwrap();
         #[cfg(feature = "esp32h2")]
-        let rmt = Rmt::new(rmt, 32.MHz(), &clocks, None).unwrap();
+        let rmt = Rmt::new(rmt, 32.MHz(), &clocks).unwrap();
 
         let rmt_buffer = smartLedBuffer!(1);
         let led = SmartLedsAdapter::new(rmt.channel0, led_pin, rmt_buffer, clocks);
@@ -110,7 +110,6 @@ impl<'a> Esp32Platform<'a> {
                 scl_pin, //io.pins.gpio6,
                 400.kHz(),
                 clocks,
-                None,
             ),
             temp_delay: 2000,
             moisture_delay: 5000,
@@ -330,6 +329,8 @@ pub fn SENSOR_TIMER_TG0_T0_LEVEL() {
 }
 
 fn setup_sensor_timer(timer: Timer<Timer0<TIMG0>, esp_hal::Blocking>, interval: u64) {
+    timer.set_interrupt_handler(SENSOR_TIMER_TG0_T0_LEVEL);
+
     timer.clear_interrupt();
 
     interrupt::enable(Interrupt::TG0_T0_LEVEL, Priority::Priority1).unwrap();
