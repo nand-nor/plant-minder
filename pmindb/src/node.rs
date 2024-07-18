@@ -3,10 +3,10 @@
 /// 2. Notify broker when node stops sending data
 /// 3. Stream sensor data to node event stream
 use pmindp_sensor::ATSAMD10SensorReading;
-use std::net::{SocketAddr, SocketAddrV6};
+use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
 use tokio::{net::UdpSocket, sync::mpsc};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum NodeEvent {
     NodeTimeout(SocketAddrV6),
     SocketError(SocketAddrV6),
@@ -16,7 +16,9 @@ pub enum NodeEvent {
     SensorReading(NodeSensorReading),
 }
 
-#[derive(Debug)]
+pub type Registration = (crate::Eui, Ipv6Addr);
+
+#[derive(Debug, Clone, Copy)]
 pub struct NodeSensorReading {
     pub addr: SocketAddrV6,
     pub data: ATSAMD10SensorReading,

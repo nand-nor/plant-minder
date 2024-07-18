@@ -5,3 +5,20 @@ edition = "2021"
 authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 
 [dependencies]
+pmindb = {  path="../pmindb"}
+pmindp-sensor = {  path="../pmindp-sensor"}
+tokio = {version = "1.37.0", features=["full"]}
+thiserror = {version="1.0.59"}
+env_logger = {version= "0.11.3"}
+log = {version= "0.4.21"}
+crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
+futures = "0.3.30"
+ratatui = { version = "0.27.0", features = ["all-widgets", "serde"]}
+actix = {version = "0.13.5", features=["macros"]}
+tokio-stream = "0.1.15"
+
+
+[[bin]]
+path = "./src/bin/main.rs"
+name = "plant-minder"
+

@@ -1,16 +1,14 @@
 # Tests
 
-Some binaries for testing broker layer with Thread mesh, via the `plant-minder-mesh` binary
+Some binaries for testing broker layer with Thread mesh, via the `broker-mesh-test` binary
 
-## Build
-For building for the RPI 4 running raspbian kernel release `6.1.0-rpi7-rpi-2712` / kernel version `#1 SMP PREEMPT Debian 1:6.1.63-1+rpt1 (2023-11-24)`, I am using rust target `aarch64-unknown-linux-gnu`, and have separately installed the `aarch64-linux-gnu-gcc` toolchain (version 11.4.0), building on Ubuntu. 
-
-To build the current `plant-minder-mesh` example bin, use the following:
+## Build 
+To build the current `broker-mesh-test` test bin, use the following:
 ```
-cargo build --target=aarch64-unknown-linux-gnu --bin plant-minder-mesh --features="thread_mesh" --release
+cargo build --target=aarch64-unknown-linux-gnu --bin broker-mesh-test --release
 ```
 
-For older versions like 3b+ use the `armv7-unknown-linux-gnueabihf` target and the appropriate toolchain. 
+For older versions like 3b+ use the `armv7-unknown-linux-gnueabihf` target and point to the appropriate toolchain with the needed rustc linker flag. 
 
 #### Tip: 
 If you are not familiar with building code for remote targets and/or run into (& dont want to deal with) issues with missing/incompatible library versions, you can clone this repo and build it on target (on the pi). That way you wont need to worry about specifying the target or linking against the correct version of glibc etc. Otherwise if you dont want to do this make sure you have all the needed toolchains and targets installed and that your gcc toolchain is at the same path specified in this crate's `.cargo/config.toml` file

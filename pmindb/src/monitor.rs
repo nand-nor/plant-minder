@@ -213,7 +213,8 @@ impl Handler<GetNodeStatus> for OtMonitor {
     }
 }
 
-/// Both Db actor and OtMonitor actor use this
+/// The [`cli::OtMonitor`](cli/struct.OtMonitor.html) actor and
+/// other external event handlers may use this type
 #[derive(Message, Clone)]
 #[rtype(result = "NodeRegResponse")]
 pub struct Registration {
@@ -225,7 +226,6 @@ pub struct Registration {
 }
 
 type NodeRegResponse = Result<(), OtMonitorError>;
-
 impl Handler<Registration> for OtMonitor {
     type Result = NodeRegResponse;
 

@@ -66,13 +66,45 @@ impl BrokerCoordinator {
             .spawn_db_conn_registry_task(database_handle.clone(), registration_rx)
             .await;
         broker
-            .spawn_child_mon_task(25, ot_mon_handle, stream_tx, registration_tx)
+            .spawn_child_mon_task(
+                Duration::from_secs(25),
+                ot_mon_handle,
+                stream_tx,
+                registration_tx,
+            )
             .await;
         broker
             .spawn_db_conn_sensor_stream_task(database_handle, stream_rx)
             .await;
 
         Ok(broker)
+    }
+
+    /// For minimal builds that dont require database conn
+    pub async fn new_no_db_con(
+        stream_tx: UnboundedSender<UnboundedReceiver<NodeEvent>>,
+        registration_tx: UnboundedSender<(Eui, Ipv6Addr)>,
+        poll_interval: Duration,
+    ) -> Result<Self, BrokerCoordinatorError> {
+        let mut broker = Self {
+            monitor_handle: None,
+            db_registry_conn_handle: None,
+            db_sensor_stream_conn_handle: None,
+        };
+
+        let ot_mon = OtMonitor::new(Box::new(OtCliClient));
+        let ot_mon_handle = ot_mon.start();
+
+        broker
+            .spawn_child_mon_task(poll_interval, ot_mon_handle, stream_tx, registration_tx)
+            .await;
+
+        Ok(broker)
+    }
+
+    /// For minimal builds
+    pub async fn exec_monitor(&mut self) {
+        self.monitor_handle.take().unwrap().await.ok();
     }
 
     pub async fn exec_task_loops(&mut self) {
@@ -214,12 +246,12 @@ impl BrokerCoordinator {
     async fn spawn_db_conn_registry_task(
         &mut self,
         db: Addr<PlantDatabaseHandler>,
-        mut registration_rcvr: UnboundedReceiver<(Eui, SocketAddrV6)>,
+        mut registration_rcvr: UnboundedReceiver<(Eui, Ipv6Addr)>,
     ) {
         let handle = tokio::spawn(async move {
             while let Some((eui, rcv)) = registration_rcvr.recv().await {
                 log::trace!("Node being added to DB {:?} addr {:?}", eui, rcv);
-                if let Err(e) = db.send(CreateOrModify { eui, ip: *rcv.ip() }).await {
+                if let Err(e) = db.send(CreateOrModify { eui, ip: rcv }).await {
                     log::error!("database actor handle error {e:}");
                 }
             }
@@ -233,16 +265,15 @@ impl BrokerCoordinator {
 
     async fn spawn_child_mon_task(
         &mut self,
-        poll_interval: u64,
+        poll: Duration,
         ot_mon: Addr<OtMonitor>,
         stream_sender: UnboundedSender<UnboundedReceiver<NodeEvent>>,
-        registration_sender: UnboundedSender<(Eui, SocketAddrV6)>,
+        registration_sender: UnboundedSender<(Eui, Ipv6Addr)>,
     ) {
-        let poll = Duration::from_secs(poll_interval);
         let handle = tokio::spawn(async move {
             log::info!(
                 "Setting up node / network monitor task to check every {:?} seconds",
-                poll_interval
+                poll
             );
 
             loop {
@@ -315,7 +346,7 @@ impl BrokerCoordinator {
                                         }
 
                                         // Send the sensor data source to the task managing those streams
-                                        if let Err(e) = _registration_sender.send((eui, addr)) {
+                                        if let Err(e) = _registration_sender.send((eui, ip)) {
                                             // TODO
                                             log::error!("failure to send sensor stream {e:}");
                                         }
