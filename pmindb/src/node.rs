@@ -2,7 +2,7 @@
 /// 1. Open new socket to get sensor data from it (using the port sent in the registration)
 /// 2. Notify broker when node stops sending data
 /// 3. Stream sensor data to node event stream
-use pmindp_sensor::ATSAMD10SensorReading;
+use pmindp_sensor::SensorReading;
 use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
 use tokio::{net::UdpSocket, sync::mpsc};
 
@@ -21,7 +21,7 @@ pub type Registration = (crate::Eui, Ipv6Addr);
 #[derive(Debug, Clone, Copy)]
 pub struct NodeSensorReading {
     pub addr: SocketAddrV6,
-    pub data: ATSAMD10SensorReading,
+    pub data: SensorReading,
 }
 
 pub struct NodeEventHandler {
@@ -84,7 +84,7 @@ impl NodeEventHandler {
                                     // TODO error handling
                                     _sender.send(NodeEvent::SensorReading(NodeSensorReading {
                                         addr: node_addr,
-                                        data: ATSAMD10SensorReading { moisture, temperature }
+                                        data: SensorReading { moisture, temperature }
                                     })
                                     ).ok();
                                 }

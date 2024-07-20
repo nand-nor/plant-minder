@@ -1,7 +1,20 @@
 # Plant-Minder (WIP)
-RPI4 + soil sensors to track when my plants need watering. This repo contains (mostly) all needed code for deployiong a simple plant monitoring system, which is a distributed system of microcontrollers programmed to control and report sensor data. Microcontrollers sense and report soil moisture data via a wireless mesh protocol, which is received by a raspberry pi. The pi has logic to determine soil conditions / trends and will ultimately alert me with a big obvious visual display whenever I need to water my plants.
+
+RPI4 + soil sensors to track when my plants need watering. 
+
+## Contents
+- [Description](#description)
+- [Components / Design Details](#components--workspace-design-details)
+  - [Esp32 / Sensors](#esp32sensor-layer)
+  - [Broker layer](#broker-layer)
+  - [TUI layer](#front-end--tui-layer) 
+- [Status](#status--goals--hopes--dreams)
+- [Limitations](#limitations)
+
 
 ## Description
+
+This repo contains (mostly) all needed code for deployiong a simple plant monitoring system, which is a distributed system of microcontrollers programmed to control and report sensor data. Microcontrollers sense and report soil moisture data via a wireless mesh protocol, which is received by a raspberry pi. The pi has logic to determine soil conditions / trends and will ultimately alert me with a big obvious visual display whenever I need to water my plants.
 
 ```
          _            ________________________             _
@@ -15,10 +28,10 @@ RPI4 + soil sensors to track when my plants need watering. This repo contains (m
         |   pmindb > |     Broker / Backend   |             |-------> | database |
         |            |_________(CoAP)_________|            _|         |__________|
         |                ^            |         
-        |             ___|____________v_______             _
-        |            |      otbr-agent/       |             |
-        |            |       openthread       |             | < otbr-agent
-        |_           |________________________|            _|
+        |             ___|____________v_______             
+        |            |      otbr-agent/       |             
+        |            |       openthread       |             
+        |_           |________________________|            
                        ^          ^          ^             
                        | 802.15.4 |          |      
                        |          |          |                
@@ -67,8 +80,13 @@ The Base i2c control for the ATSAMD10 chip ([seesaw soil sensor](https://www.ada
 ### Broker Layer 
 Under active development. A main goal for this layer is to provide node management/monitoring, so that the system is fault tolerant and even if remote nodes fall off the network they will be picked back up and register to report sensor data as soon as they rejoin the network. This layer also is meant to handle received data and generate relevant event notifications etc. based on top-level subscriptions, so that I can ideally support different front end apps if I ever get to that point. 
 
+Some additional [details on test layer / expected output here](./pmind-tests/README.md).
+
+
 ### Front end / TUI Layer
 For the first iteration I am targeting a simple TUI using `ratatui`. The current plan is to have this layer render the UI / data by subscribing to sensor events via the broker layer. It will also interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. I am striving for this to be as simple as possible-- all I need is to be provided with a visual cue that it is time to water my plants. 
+
+More info on current status, build info, and [other details here](./pmindd/README.md).
 
 
 ## Status / Goals / Hopes / Dreams
@@ -82,3 +100,9 @@ Another goal is to eventually support other moisture sensors
 - [SparkFun soil moisture sensor](https://www.digikey.com/en/products/detail/sparkfun-electronics/SEN-13322/5764506)
 
 Additional sensor types will also eventually be added, targeting humidity co2 and light sensors.
+
+## Limitations
+In general there are many; this is just a hobby project being done in my spare time. But arguably the biggest limitations of the current system is that the sensors currently only support acting as child devices on the thread network (MTDs) and are very simple in their implementation. The TL;DR of these limitations means that range is limited and the system will not really have the benefits of a full mesh (it will have a star, or hub and spoke topology). Therefore the child nodes cant be too far away from the RPI or they will drop off the network. The current impl also requires that no other router nodes be on the network that may be at any point "better parents" than the RPI (e.g. have better link quality w.r.t. any given child node). 
+
+#### More supplemental info re: above informations (skippable)
+There are a few reasons for this: the OT client implementation currently monitors the thread network by periodically pulling the child ip addresses (through the `childip` cli cmd) and checking the returned values to presence of new or absence of nodes. If the child nodes have better link quality with another router, they will perform mesh link establishment/basically reparent themselves to that router. That means that the RPI wont have access to the IP addresses of those child nodes via the `childip` cli command. Obtaining addresses that parents will route packets to child nodes for, without the child node performing some additional steps (service registration), then becomes an issue. This can be solved by adding code where the child nodes register services (a "soil sensor" service for example) with an SRP service registrar, which the RPI is providing as a border router. Then the RPI (or any device on the network really) can perform a service lookup to find such services, and to obtain a routable IP address that will allow parents to route packets using that address successfully to child nodes. That will add a lot more complexity so that will be added as a future enhancement. 

@@ -1,7 +1,7 @@
 #![allow(unused)]
 use std::net::Ipv6Addr;
 
-use pmindp_sensor::{ATSAMD10SensorReading, SensorReading};
+use pmindp_sensor::SensorReading;
 use rusqlite::{params, Connection, Error as SqliteErr, Result};
 use thiserror::Error;
 
@@ -63,7 +63,7 @@ impl PlantDatabase {
 
     pub(crate) fn insert_reading(
         &self,
-        reading: ATSAMD10SensorReading,
+        reading: SensorReading,
         sensor_id: u16,
     ) -> Result<(), DatabaseError> {
         self.conn.execute(
@@ -98,7 +98,7 @@ impl Actor for PlantDatabaseHandler {
 
 #[derive(Debug, Message)]
 #[rtype(result = "NodeSensorReadingResponse")]
-pub struct NodeSensorReading(pub (Ipv6Addr, ATSAMD10SensorReading));
+pub struct NodeSensorReading(pub (Ipv6Addr, SensorReading));
 
 type NodeSensorReadingResponse = Result<(), DatabaseError>;
 
