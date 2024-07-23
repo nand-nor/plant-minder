@@ -9,7 +9,7 @@ use esp_hal::{
     prelude::*,
 };
 
-use pmindp_sensor::{/*SensorReading,*/ SoilSensor, SoilSensorError};
+use pmindp_sensor::{MoistureSensor, PlatformSensorError, Sensor, SoilSensorError};
 
 type AdcCal = esp_hal::analog::adc::AdcCalCurve<ADC1>;
 //type AdcCal = esp_hal::analog::adc::AdcCalLine<esp_hal::peripherals::ADC1>;
@@ -54,27 +54,32 @@ impl<'a> ProbeCircuit<'a> {
             adc1,
         }
     }
-}
 
-impl<'a> SoilSensor for ProbeCircuit<'a> {
-    type InputParams = Option<u32>;
-    type MoistureOutput = u16;
-    type TemperatureOutput = f32;
-
-    fn moisture(&mut self, _r: Self::InputParams) -> Result<Self::MoistureOutput, SoilSensorError> {
+    fn moisture(&mut self) -> Result<u16, SoilSensorError> {
         self.pwr_pin.set_high();
         // delay 10 millis
         self.delay.delay_micros(10000);
         let val = nb::block!(self.adc1.read_oneshot(&mut self.sensor_pin)).unwrap();
         self.pwr_pin.set_low();
-
         Ok(val)
     }
+}
 
-    fn temperature(
-        &mut self,
-        _r: Self::InputParams,
-    ) -> Result<Self::TemperatureOutput, SoilSensorError> {
-        Ok(0.0)
+impl<'a> MoistureSensor for ProbeCircuit<'a> {
+    fn moisture(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError> {
+        let reading = self.moisture().map_err(SoilSensorError::from)?;
+        log::info!("moisture {:?}", reading);
+
+        let size = core::mem::size_of::<u16>();
+        buffer[start..start + size].copy_from_slice(&reading.to_le_bytes());
+        Ok(size)
+    }
+}
+
+impl<'a> Sensor for ProbeCircuit<'a> {
+    fn read(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, PlatformSensorError> {
+        let size = <Self as MoistureSensor>::moisture(self, buffer, start)
+            .map_err(|e| PlatformSensorError::from(e))?;
+        Ok(size)
     }
 }

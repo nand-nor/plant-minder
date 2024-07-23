@@ -151,7 +151,7 @@ mod tests {
         assert_eq!(
             ret[1],
             (
-                "co4f".to_string(),
+                0xc04f,
                 Ipv6Addr::from([0xfde0, 0xdc9c, 0xb343, 0x1, 0x9b57, 0xcf1a, 0xc2d3, 0x49d5])
             )
         );
@@ -160,9 +160,7 @@ mod tests {
     #[tokio::test]
     async fn check_cli_parse_prefix() {
         let res = "fdc9:fdb2:9fe8:1::/64 paos low 4400\r\nDone".to_string();
-        let ret: Ipv6Net = OtCliClient::parse_prefix_output(res)
-            // .await
-            .expect("Unable to get Ipv6Net");
+        let ret: Ipv6Net = OtCliClient::parse_prefix_output(res).expect("Unable to get Ipv6Net");
         assert_eq!(ret, "fdc9:fdb2:9fe8:1::/64".parse().unwrap());
     }
 }

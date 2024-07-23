@@ -5,8 +5,10 @@ edition = "2021"
 authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 
 [dependencies]
+bitflags = "2.6.0"
 cfg-if = "1.0.0"
 embedded-hal = {version = "1.0.0"} 
+embedded-hal-bus = {version = "0.2.0" }
 esp-hal = {version= "0.19.0", git = "https://github.com/esp-rs/esp-hal.git"}
 esp-backtrace = { version="0.13.0", git = "https://github.com/esp-rs/esp-hal.git", features = ["panic-handler", "exception-handler", "println"]}
 esp-println       = { version= "0.10.0", git = "https://github.com/esp-rs/esp-hal.git", features = ["log"]}
@@ -18,14 +20,15 @@ heapless = {version= "0.8.0"}
 no-std-net = {version= "0.6.0"}
 critical-section = {version= "1.1.0"}
 smart-leds = {version= "0.4.0" }
-esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", rev="d18b689"}
+esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", branch="add-more-mtd-support"}
 coap-lite = {version="0.12.0", features=["udp"],default-features=false}
 pmindp-sensor = {  path="../pmindp-sensor"}
 
 [features]
-default = ["esp32c6","atsamd10"]
+default = ["esp32c6","atsamd10","tsl2591"]
 esp32c6 = [ "esp-hal/esp32c6", "esp-ieee802154/esp32c6", "esp-openthread/esp32c6", "esp-backtrace/esp32c6", "esp-println/esp32c6", "esp-hal-smartled/esp32c6" ]
 esp32h2 = [ "esp-hal/esp32h2", "esp-ieee802154/esp32h2", "esp-openthread/esp32h2", "esp-backtrace/esp32h2", "esp-println/esp32h2", "esp-hal-smartled/esp32h2" ]
 probe-circuit = []
 atsamd10 = []
 st0160 = []
+tsl2591 = []

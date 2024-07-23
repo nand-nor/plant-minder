@@ -8,7 +8,8 @@ RPI4 + soil sensors to track when my plants need watering.
   - [Esp32 / Sensors](#esp32sensor-layer)
   - [Broker layer](#broker-layer)
   - [TUI layer](#front-end--tui-layer) 
-- [Status](#status--goals--hopes--dreams)
+- [Status](#status)
+- [Goals](#goals)
 - [Limitations](#limitations)
 
 
@@ -44,18 +45,13 @@ pmindp-esp32-thread>| ESP32|  | ESP32 |  | ESP32 | <-- CoAP
                    | Sensor | | Sensor | | Sensor | 
                     --------   --------   --------  
 ```
-### Components / Workspace Design details
-The `pmindd` crate is where the front end/TUI rendering logic is defined (or, will be, when this is closer to being done). It will (probably) run as a daemon, interfacing with the broker layer to receive and render events. Its main responsibility will be displaying sensor data as it is received from the mesh. It will do this very simply via TUI using `ratatui` 
+<img src="./doc/sensor_esp32c6.jpg" width="250" height="300"> <--sensor alone
+<img src="./doc/sensor_in_plant2.jpg" width="265" height="340"> <-- sensor in plant
 
-The `pmindb` crate is a lib where the the broker/monitor layer is defined / implemented, which interfaces with the front end layer to provide the following responsibilities/functionality
-- node monitoring & management
-  - register new nodes as they come online (done automatically)
-  - manage when nodes drop off the network
-  - associate nodes that have had to reset themselves with their previous database entry (TBD)
-- manage socket(s) where sensor data is received 
-- push data into event queues and/or database (TBD what this piece will look like)
-- expose event queues for the TUI front end to subscribe 
-- provide requested info from the database 
+### Components / Workspace Design details
+The `pmindd` crate is where the front end/TUI rendering logic is defined (or, will be, when this is closer to being done). 
+
+The `pmindb` crate is a lib where the the broker/monitor layer is defined / implemented.
 
 The `otbr-agent` / `openthread` layer running on the pi is provided via a 3rd party binary; the pi must be set up to run the openthread stack via `otbr-agent`. More details / build steps available in [the parts list](./doc/part_list.md).
 
@@ -71,35 +67,53 @@ As mentioned above, Thread provides the transport layer for reporting sensor dat
 
 For the soil sensor, the code currently only supports [Seesaw Capacitive moisture sensor (ATSAMD10)](https://www.adafruit.com/product/4026). Although I do have some plans to eventually  support other sensors (both different soil sensors and other sensor types like humidity / light/etc.).
 
-![esp32-c6 controller with sensor on pins 5 & 6](./doc/sensor_esp32c6.jpg)
-
-To support this deployment mode, the RPI must be configured to run the openthread stack with an RCP radio. The plant-minder system currently assumes that the RPI is acting as a border agent but future iterations may change this (there is no real requirement currently for bidirectional IP connectivity). 
-
-The Base i2c control for the ATSAMD10 chip ([seesaw soil sensor](https://www.adafruit.com/product/4026)) is defined in `pmindp-sensor`. This is where other sensor impls will go if/when I get to that.
-
 ### Broker Layer 
-Under active development. A main goal for this layer is to provide node management/monitoring, so that the system is fault tolerant and even if remote nodes fall off the network they will be picked back up and register to report sensor data as soon as they rejoin the network. This layer also is meant to handle received data and generate relevant event notifications etc. based on top-level subscriptions, so that I can ideally support different front end apps if I ever get to that point. 
+
+Defined in the `pmindb` crate, this is the layer that interfaces with the otbr-agent to provide the following responsibilities/functionality
+- node monitoring & management
+  - register new nodes as they come online (done automatically)
+  - manage when nodes drop off the network
+  - associate nodes that have had to reset themselves with their previous database entry (TBD)
+- manage socket(s) where sensor data is received 
+- push data into event queues and/or database (TBD what this piece will look like)
+- expose event queues for the TUI front end to subscribe 
+- provide requested info from the database 
+
+It also interfaces with the front end layer to expose the data that gets rendered in (eventually) graphs and decisions around when it is time to water things. 
+
+A main goal for this layer is to provide node management/monitoring, so that the system is fault tolerant and even if remote nodes fall off the network they will be picked back up and register to report sensor data as soon as they rejoin the network. This layer also is meant to handle received data and generate relevant event notifications etc. based on top-level subscriptions, so that I can ideally support different front end apps if I ever get to that point. 
 
 Some additional [details on test layer / expected output here](./pmind-tests/README.md).
 
-
 ### Front end / TUI Layer
-For the first iteration I am targeting a simple TUI using `ratatui`. The current plan is to have this layer render the UI / data by subscribing to sensor events via the broker layer. It will also interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. I am striving for this to be as simple as possible-- all I need is to be provided with a visual cue that it is time to water my plants. 
+
+The main responsibility of this layer will be displaying sensor data as it is received from the mesh. It will do this very simply via TUI using `ratatui`, subscribing to event queues exposed by the broker layer. It is defined in the  `pmindd` crate.
+
+An additional goal for this layer is to interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. I am striving for this to be as simple as possible-- all I need is to be provided with a visual cue that it is time to water my plants. 
 
 More info on current status, build info, and [other details here](./pmindd/README.md).
 
 
-## Status / Goals / Hopes / Dreams
+## Status
 
-In general I would estimate this is roughly at 55% complete. Lots of work is still needed. But basic sensor control / running openthread on the esp32 devices, and receiving reported sensor data on the pi is working.
+In general I would estimate this is roughly at 75% complete. Lots of work is still needed. But basic sensor control / running openthread on the esp32 devices, and receiving reported sensor data on the pi is working. Some minimal rendering of the received data is also complete.
 
-One major goal is more complex OT device type support for remote sensor controllers. The `esp-openthread` repo currently only supports running esp32 boards as MTDs. Work is ongoing to add support for running as both FTDs and as SED/SSEDs. Ideally these nodes will be able to run as FTDs when mains powered (so they can route packets for eachother) and SED (sleepy end device) waking up only to read and publish sensor data, for batter powered devices. 
+The work now largely revolves around the following:
+- Adding additional sensor support
+- Integrating an ORM and actually using a database
+- Plant records / sensor association
+- Sensor end devices behaving as more complex device types (see the section on [goals](#goals) and [limitations](#limitations))
+
+## Goals
+
+One major goal is more complex OT device type support for remote sensor controllers. The `esp-openthread` repo currently only supports running esp32 boards as MTDs. Work is ongoing to add support for running as both FTDs and as SED/SSEDs. Ideally these nodes will be able to run as FTDs when mains powered (so they can route packets for eachother) and SED (sleepy end device) waking up only to read and publish sensor data, for battery powered devices. 
 
 Another goal is to eventually support other moisture sensors
 - [Sunfounder capacitive moister sensor](https://www.digikey.com/en/products/detail/sunfounder/ST0160/22116813) 
 - [SparkFun soil moisture sensor](https://www.digikey.com/en/products/detail/sparkfun-electronics/SEN-13322/5764506)
+- [Adafruit light sensor](https://www.adafruit.com/product/1980)
+- Others TBD (Co2)
 
-Additional sensor types will also eventually be added, targeting humidity co2 and light sensors.
 
 ## Limitations
 In general there are many; this is just a hobby project being done in my spare time. But arguably the biggest limitations of the current system is that the sensors currently only support acting as child devices on the thread network (MTDs) and are very simple in their implementation. The TL;DR of these limitations means that range is limited and the system will not really have the benefits of a full mesh (it will have a star, or hub and spoke topology). Therefore the child nodes cant be too far away from the RPI or they will drop off the network. The current impl also requires that no other router nodes be on the network that may be at any point "better parents" than the RPI (e.g. have better link quality w.r.t. any given child node). 
