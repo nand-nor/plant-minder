@@ -18,33 +18,91 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-pub enum SoilSensorError {
-    I2cReadError,
-    I2cWriteError,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct SensorReading {
     pub moisture: u16,
     pub temperature: f32,
 }
 
-/// Trait to define base sensor operations for pulling
-/// moisture and optional temperature readings 
-pub trait SoilSensor {
-    type InputParams;
-    type MoistureOutput: core::fmt::Debug;
-    type TemperatureOutput: core::fmt::Debug;
-
-    fn moisture(&mut self, r: Self::InputParams) -> Result<Self::MoistureOutput, SoilSensorError>;
-    fn temperature(
-        &mut self,
-        r: Self::InputParams,
-    ) -> Result<Self::TemperatureOutput, SoilSensorError>;
+/// [`SensorPlatform`] trait defines the sensor read operation for the platform,
+/// which is configured to hold a vec of dynamic [`Sensor`] objects to
+/// allow support for different sensor types
+pub trait SensorPlatform {
+    fn sensor_read(&self, buff: &mut [u8]) -> Result<(), PlatformSensorError>;
 }
-/// Trait that defines the sensor read operation, to allow support for
-/// different sensor types
-pub trait SoilSensorPlatform {
-    type Sensor: SoilSensor;
-    fn sensor_read(&self, buff: &mut [u8]) -> Result<(), SoilSensorError>;
+
+/// [`Sensor`] trait defines the base sensor read operation, to allow support for
+/// different sensor types. For each sensor type that a given platform
+/// can support, this operation should pull all possible data fields (e.g. some
+/// sensors may only support pulling moisture, others moisture + temp, others
+/// only report lumens/lux etc). Relies on [`MoistureSensor`], [`TempSensor`],
+/// [`LightLumenSensor`], and [`Lux Sensor`] to provide support for
+/// device-specific data read ops
+pub trait Sensor {
+    fn read(&mut self, buffer: &mut [u8], index: usize) -> Result<usize, PlatformSensorError>;
+}
+
+/// allows device-specific impls of moisture-specific sensor functionality
+pub trait MoistureSensor {
+    fn moisture(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError>;
+}
+
+/// allows device-specific impls of temp-specific sensor functionality
+pub trait TempSensor {
+    fn temperature(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError>;
+}
+
+/// allows device-specific impls of lumens-specific sensor functionality
+pub trait LightLumenSensor {
+    fn luminosity(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, LightSensorError>;
+}
+
+/// allows device-specific impls of lux-specific sensor functionality
+pub trait LightLuxSensor {
+    fn lux(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, LightSensorError>;
+}
+
+#[derive(Debug)]
+pub enum I2cError {
+    I2cReadError,
+    I2cWriteError,
+    I2cWriteReadError,
+}
+
+#[derive(Debug)]
+pub enum LightSensorError {
+    I2cError(I2cError),
+    SetupError,
+    SensorError,
+}
+
+impl From<I2cError> for LightSensorError {
+    fn from(e: I2cError) -> Self {
+        LightSensorError::I2cError(e)
+    }
+}
+
+#[derive(Debug)]
+pub enum SoilSensorError {
+    I2cReadError,
+    I2cWriteError,
+}
+
+#[derive(Debug)]
+pub enum PlatformSensorError {
+    SoilSensorError(SoilSensorError),
+    LightSensorError(LightSensorError),
+    Other,
+}
+
+impl From<SoilSensorError> for PlatformSensorError {
+    fn from(e: SoilSensorError) -> Self {
+        PlatformSensorError::SoilSensorError(e)
+    }
+}
+
+impl From<LightSensorError> for PlatformSensorError {
+    fn from(e: LightSensorError) -> Self {
+        PlatformSensorError::LightSensorError(e)
+    }
 }

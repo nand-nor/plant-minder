@@ -4,7 +4,6 @@
 
 #![no_std]
 
-
 // Compile time checks to prevent building with multiple
 // sensor types
 #[cfg(any(
@@ -28,16 +27,18 @@ compile_error!("esp32h2 does not support the features neded to run the probe-cir
 
 extern crate alloc;
 
-mod sensor;
 pub mod platform;
+mod sensor;
 
-pub use crate::{sensor::{ProbeCircuit, ATSAMD10}, platform::Esp32Platform};
+pub use crate::{
+    platform::Esp32Platform,
+    sensor::{ProbeCircuit, ATSAMD10, TSL2591},
+};
 
 use core::{cell::RefCell, ptr::addr_of_mut};
-use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
+use critical_section::Mutex;
 use esp_hal::{
     clock::Clocks,
-    delay::Delay,
     gpio::GpioPin,
     interrupt::{self, Priority},
     peripheral::Peripheral,
@@ -50,10 +51,14 @@ use esp_hal::{
     timer::timg::{Timer, Timer0, TimerGroup},
     Blocking,
 };
-use critical_section::Mutex;
+use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_ieee802154::Ieee802154;
 
-use pmindp_sensor::{SoilSensor, SoilSensorError, SoilSensorPlatform};
+use pmindp_sensor::{
+     Sensor, SensorPlatform,
+};
+
+use alloc::{boxed::Box, vec::Vec};
 
 #[global_allocator]
 static ALLOC: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -73,7 +78,7 @@ static SENSOR_TIMER_INTERVAL: Mutex<RefCell<u64>> = Mutex::new(RefCell::new(DEFA
 
 static SENSOR_TIMER_FIRED: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
 
-pub fn init<'a, S>(
+pub fn init<'a>(
     ieee802154: &'a mut Ieee802154,
     clocks: &Clocks,
     systimer: Alarm<Target, Blocking, 0>,
@@ -81,11 +86,10 @@ pub fn init<'a, S>(
     rmt: impl Peripheral<P = RMT> + 'a,
     led_pin: GpioPin<8>,
     rng: RNG,
-    sensor: S,
-) -> Esp32Platform<'a, S>
+    sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>>,
+) -> Esp32Platform<'a>
 where
-    Esp32Platform<'a, S>: SoilSensorPlatform,
-    S: SoilSensor,
+    Esp32Platform<'a>: SensorPlatform,
 {
     let openthread = esp_openthread::OpenThread::new(ieee802154, systimer, Rng::new(rng));
     #[cfg(not(feature = "esp32h2"))]
@@ -99,7 +103,11 @@ where
     let timer = timg0.timer0;
     setup_sensor_timer(timer, 25000);
 
-    Esp32Platform::new(sensor, led, openthread, Delay::new(&clocks))
+    Esp32Platform::new(
+        led,
+        openthread,
+        sensors,
+    )
 }
 
 #[handler]

@@ -3,38 +3,37 @@ use core::{cell::RefCell, pin::pin};
 use esp_hal_smartled::SmartLedsAdapter;
 
 use esp_hal::{
-    delay::Delay, i2c::I2C, peripherals::I2C0, reset::software_reset_cpu, rmt::Channel, Blocking,
+    reset::software_reset_cpu, rmt::Channel, Blocking,
 };
 
 use critical_section::Mutex;
 use esp_ieee802154::Config;
 use esp_openthread::{
-    NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadDeviceRole,
+    NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset,
     ThreadTimestamp,
 };
 
 use coap_lite::{CoapRequest, Packet};
-use core::borrow::BorrowMut;
+
 use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
-use pmindp_sensor::{SoilSensor, SoilSensorError, SoilSensorPlatform};
-
-use crate::{
-    sensor::{ProbeCircuit, ATSAMD10},
-    SENSOR_TIMER_FIRED,
+use alloc::{boxed::Box, vec::Vec};
+use pmindp_sensor::{
+    PlatformSensorError, Sensor, SensorPlatform, 
 };
 
-// TODO put this in pmindp-sensor so other crates in 
-// workspace can access this 
+use crate::SENSOR_TIMER_FIRED;
+
+// TODO put this in pmindp-sensor so other crates in
+// workspace can access this
 // also do that for any other constants that both
 // sender and receiver need to know
 pub const BOUND_PORT: u16 = 1212;
 
-pub struct Esp32Platform<'a, S: SoilSensor> {
+pub struct Esp32Platform<'a> {
     led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
-    sensor: Mutex<RefCell<S>>,
     openthread: OpenThread<'a>,
-    delay: Delay,
+    sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>>,
 }
 
 pub enum Esp32PlatformError {
@@ -44,22 +43,19 @@ pub enum Esp32PlatformError {
     OtherError,
 }
 
-impl<'a, S> Esp32Platform<'a, S>
+impl<'a> Esp32Platform<'a>
 where
-    S: SoilSensor,
-    Esp32Platform<'a, S>: SoilSensorPlatform,
+    Esp32Platform<'a>: SensorPlatform,
 {
     pub fn new(
-        sensor: S,
         led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
         openthread: OpenThread<'a>,
-        delay: Delay,
+        sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>>,
     ) -> Self {
         Self {
             led,
             openthread,
-            sensor: Mutex::new(RefCell::new(sensor)),
-            delay,
+            sensors, 
         }
     }
 
@@ -114,7 +110,7 @@ where
             let mut socket = pin!(socket);
             socket.bind(BOUND_PORT).unwrap();
 
-            let mut send_data_buf: [u8; 6] = [0u8; 6];
+            let mut send_data_buf: [u8; 12] = [0u8; 12];
             loop {
                 self.openthread.process();
                 self.openthread.run_tasklets();
@@ -135,29 +131,22 @@ where
                         let role = self.openthread.get_device_role();
                         log::info!("Role: {:?}", role);
 
-                        match role {
-                            ThreadDeviceRole::Detached
-                            | ThreadDeviceRole::Unknown
-                            | ThreadDeviceRole::Disabled => {}
-                            _ => {
-                                if let Err(e) = socket.send(observer, port, &send_data_buf) {
-                                    // TODO depending on the error, need to set handshake IPv6 to None
-                                    // until observer can reestablish conn; this will prevent the
-                                    // node from sending data until success is better guaranteed
-                                    log::info!(
-                                            "Error sending, first print all ips??? then reset due to {:?}",
-                                            e
-                                        );
-                                    socket.close().ok();
-                                    break;
-                                } else {
-                                    data = [colors::MISTY_ROSE];
-                                    self.led
-                                        .write(brightness(gamma(data.iter().cloned()), 100))
-                                        .ok();
-                                }
-                            }
-                        };
+                        if let Err(e) = socket.send(observer, port, &send_data_buf) {
+                            // TODO depending on the error, need to set handshake IPv6 to None
+                            // until observer can reestablish conn; this will prevent the
+                            // node from sending data until success is better guaranteed
+                            log::info!(
+                                "Error sending, first print all ips??? then reset due to {:?}",
+                                e
+                            );
+                            socket.close().ok();
+                            break;
+                        } else {
+                            data = [colors::MISTY_ROSE];
+                            self.led
+                                .write(brightness(gamma(data.iter().cloned()), 100))
+                                .ok();
+                        }
                     }
                 }
 
@@ -234,49 +223,25 @@ fn print_all_addresses(addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6>) 
     }
 }
 
-impl<'a> SoilSensorPlatform for Esp32Platform<'a, ProbeCircuit<'a>> {
-    type Sensor = ProbeCircuit<'a>;
-    fn sensor_read(&self, buffer: &mut [u8]) -> Result<(), SoilSensorError> {
-        let (moisture, temp) = critical_section::with(|cs| {
-            let mut sensor = self.sensor.borrow_ref_mut(cs);
-            let moisture = sensor.moisture(None)?;
-            let temp = sensor.temperature(None)?;
-            Ok((moisture, temp))
-        })
-        .map_err(|e: SoilSensorError| {
-            log::error!("Error reading from sensor");
-            e
-        })?;
-        log::info!("Moisture: {:?}, temp: {:?}", moisture, temp);
-        // Perform the op to input readings into the send buffer here, because
-        // in this scope the return types are known
-        buffer[..2].copy_from_slice(&moisture.to_le_bytes());
-        buffer[2..].copy_from_slice(&temp.to_le_bytes());
-        Ok(())
-    }
-}
-
-impl<'a> SoilSensorPlatform for Esp32Platform<'a, ATSAMD10<I2C<'a, I2C0, Blocking>>> {
-    type Sensor = ATSAMD10<I2C<'a, I2C0, Blocking>>;
-
-    fn sensor_read(&self, buffer: &mut [u8]) -> Result<(), SoilSensorError> {
-        let (moisture, temp) = critical_section::with(|cs| {
-            let mut i2c = self.sensor.borrow_ref_mut(cs);
-            let i2c = i2c.borrow_mut();
-            let m_delay = i2c.moisture_delay;
-            let t_delay = i2c.temp_delay;
-            let moisture = i2c.moisture(|_| self.delay.delay_micros(m_delay))?;
-            let temp = i2c.temperature(|_| self.delay.delay_micros(t_delay))?;
-            Ok((moisture, temp))
-        })
-        .map_err(|e: SoilSensorError| {
-            log::error!("Error reading from sensor");
-            e
-        })?;
-        log::info!("Moisture: {:?}, temp: {:?}", moisture, temp);
-        // TODO lots of dupe code here, probably better way to organize this
-        buffer[..2].copy_from_slice(&moisture.to_le_bytes());
-        buffer[2..].copy_from_slice(&temp.to_le_bytes());
+// TODO! Need to ensure that input buffer is long enough for the
+// sensors to write to, since a variable number of sensors could be
+// attached 
+impl<'a> SensorPlatform for Esp32Platform<'a> {
+    fn sensor_read(&self, buffer: &mut [u8]) -> Result<(), PlatformSensorError> {
+        // track write indices so read ops can write to the buffer in the correct place
+        let mut start = 0;
+        self.sensors.iter().for_each(|s| {
+            if let Ok(size) = critical_section::with(|cs| {
+                let mut sensor = s.borrow_ref_mut(cs);
+                let size = sensor.read(buffer, start)?;
+                Ok(size)
+            })
+            .map_err(|e: PlatformSensorError| {
+                log::error!("Error reading from light sensor {e:?}");
+            }) {
+                start = start + size;
+            } 
+        });
         Ok(())
     }
 }
