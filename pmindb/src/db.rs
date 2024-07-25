@@ -109,7 +109,7 @@ impl Handler<NodeSensorReading> for PlantDatabaseHandler {
         // TODO associate Ipv6Addr in reading with Eui to get Plant entry
         // then associate sensor readying with said plant entry
 
-        log::info!("TODO! Got a sensor reading :) {:?}", msg);
+        log::info!("Got a sensor reading :) {:?}", msg);
         Ok(())
     }
 }
@@ -127,7 +127,7 @@ impl Handler<CreateOrModify> for PlantDatabaseHandler {
     type Result = CreateOrModifyResponse;
 
     fn handle(&mut self, msg: CreateOrModify, _ctx: &mut Self::Context) -> Self::Result {
-        log::info!("TODO! Got a new node reg :) {:?}", msg);
+        log::info!("Got a new node reg :) {:?}", msg);
 
         // TODO maintain list of EUI + currently associated Ipv6Addr
         // at any point the node may reset itself / go offline so need to

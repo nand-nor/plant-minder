@@ -47,6 +47,7 @@ async fn main() -> PlantMinderResult<()> {
                 handle_node_reg_task(&mut app, n).await;
             }
             Err(e) => {
+                log::error!("Error in app event loop {e:}, exiting");
                 break;
             }
         }

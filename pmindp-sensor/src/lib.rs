@@ -1,10 +1,5 @@
 //! Sensor lib for defining base read/write operations
-//! for the soil sensor(s) used in plant-minder builds.
-//!
-//! Currently only supports two sensor types:
-//! 1. Seesaw soil sensor (ATSAMD10)
-//! 2. Sparkfun soul sensor (Probe Circuit)
-//! with potential for support for other chips (TBD)
+//! for the sensor(s) used in plant-minder builds.
 //!
 //! The intended opertional mode of these sensors is to be operated
 //! by a remote, semi-autonomous microcontroller that controls the
@@ -22,6 +17,8 @@
 pub struct SensorReading {
     pub moisture: u16,
     pub temperature: f32,
+    pub full_spectrum: u16,
+    pub lux: f32,
 }
 
 /// [`SensorPlatform`] trait defines the sensor read operation for the platform,

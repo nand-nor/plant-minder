@@ -16,50 +16,64 @@ If you are not familiar with building code for remote targets and/or run into (&
 ## Its Working:
 Deploy & run the binary on target, set your desired log level however you prefer 
 ```
-RUST_LOG=debug ./plant-minder-mesh
+RUST_LOG=trace ./target/release/broker-mesh-test
 ```
 (Depending on which `ot-br-posix` build you deployed on the pi you may need to run as `sudo`)
 
 When running, on startup, you will see logs about registration of discovered nodes and eventual sensor data: 
 ```
-[2024-07-12T22:05:58Z INFO  plant_minder_mesh] Initializing broker & starting task loops
-[2024-07-12T22:05:58Z DEBUG pmindb::broker] Starting event and monitor loop tasks...
-[2024-07-12T22:05:58Z INFO  pmindb::broker] Setting up listener on socket PollEvented { io: Some(UdpSocket { addr: [fdc9:fdb2:9fe8:1:42e5:3794:5da0:ceaa]:1212, fd: 9 }) }
-[2024-07-12T22:05:58Z INFO  pmindb::broker] Setting up node / network monitor task to check every 25 seconds
-[2024-07-12T22:05:58Z DEBUG pmindb::broker] Polling for network change
-[2024-07-12T22:05:58Z DEBUG pmindb::broker] Polling for new nodes
-[2024-07-12T22:05:58Z INFO  pmindb::broker] Registering fdc9:fdb2:9fe8:1:9189:13e7:9ec2:ad68
-[2024-07-12T22:05:58Z DEBUG pmindb::monitor] Registering node 4413 : fdc9:fdb2:9fe8:1:9189:13e7:9ec2:ad68
-[2024-07-12T22:05:58Z INFO  pmindb::broker] Registering fdc9:fdb2:9fe8:1:d366:bef0:62d5:2964
-[2024-07-12T22:06:28Z DEBUG pmindb::monitor] Registering node 4414 : fdc9:fdb2:9fe8:1:d366:bef0:62d5:2964
-[2024-07-12T22:06:28Z INFO  pmindb::broker] Registering fdc9:fdb2:9fe8:1:d062:5abf:c70a:76b5
-[2024-07-12T22:06:58Z DEBUG pmindb::monitor] Registering node 4415 : fdc9:fdb2:9fe8:1:d062:5abf:c70a:76b5
-[2024-07-12T22:06:58Z INFO  pmindb::broker] Registering fdc9:fdb2:9fe8:1:3715:a581:7786:efd9
-[2024-07-12T22:07:28Z DEBUG pmindb::monitor] Registering node 4416 : fdc9:fdb2:9fe8:1:3715:a581:7786:efd9
-[2024-07-12T22:07:28Z INFO  pmindb::broker] Registering fdc9:fdb2:9fe8:1:d8a9:a6d9:398:ffcc
-[2024-07-12T22:07:58Z DEBUG pmindb::monitor] Registering node 4402 : fdc9:fdb2:9fe8:1:d8a9:a6d9:398:ffcc
+noid@raspberrypi:~/plant-minder $ RUST_LOG=trace ./target/release/broker-mesh-test
+[2024-07-25T23:05:49Z INFO  broker_mesh_test] Initializing broker & starting task loops
+[2024-07-25T23:05:49Z DEBUG pmindb::broker] Starting event and monitor loop tasks...
+[2024-07-25T23:05:49Z INFO  pmindb::broker] Setting up node / network monitor task to check every 25s seconds
+[2024-07-25T23:05:49Z DEBUG pmindb::broker] Polling for network change
+[2024-07-25T23:05:49Z DEBUG pmindb::broker] Polling for new nodes
+[2024-07-25T23:05:49Z INFO  pmindb::broker] Starting CoAP Registration for fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f on port 1254
+[2024-07-25T23:05:49Z DEBUG pmindb::broker] Got a response from [fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f]:1212, expected [fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f]:1212
+[2024-07-25T23:05:49Z INFO  pmindb::monitor] Node rloc: 17475 node port 1254
+[2024-07-25T23:05:49Z DEBUG pmindb::monitor] Registering node rloc 17475 : port 1254
+[2024-07-25T23:05:49Z TRACE pmindb::broker] Node being added to DB [96, 85, 249, 247, 7, 120] addr fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f
+[2024-07-25T23:05:49Z TRACE pmindb::broker] Processing NodeEvent receiver as a stream
+[2024-07-25T23:05:49Z INFO  pmindb::db] Got a new node reg :) CreateOrModify { eui: [96, 85, 249, 247, 7, 120], ip: fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f }
+[2024-07-25T23:05:49Z INFO  pmindb::broker] Starting CoAP Registration for fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958 on port 1284
+[2024-07-25T23:05:49Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f]:1212 moisture 956 temp 91.14108
+[2024-07-25T23:05:49Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f, SensorReading { moisture: 956, temperature: 91.14108, full_spectrum: 3592, lux: 84.92312 }))
+[2024-07-25T23:05:50Z DEBUG pmindb::broker] Got a response from [fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958]:1212, expected [fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958]:1212
+[2024-07-25T23:05:50Z INFO  pmindb::monitor] Node rloc: 17476 node port 1284
+[2024-07-25T23:05:50Z DEBUG pmindb::monitor] Registering node rloc 17476 : port 1284
+[2024-07-25T23:05:50Z TRACE pmindb::broker] Node being added to DB [96, 85, 249, 246, 242, 68] addr fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958
+[2024-07-25T23:05:50Z TRACE pmindb::broker] Processing NodeEvent receiver as a stream
+[2024-07-25T23:05:50Z INFO  pmindb::db] Got a new node reg :) CreateOrModify { eui: [96, 85, 249, 246, 242, 68], ip: fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958 }
+[2024-07-25T23:05:50Z INFO  pmindb::broker] Starting CoAP Registration for fdc9:fdb2:9fe8:1:3907:598:9e77:3a97 on port 1231
+[2024-07-25T23:05:50Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958]:1212 moisture 399 temp 91.24501
+[2024-07-25T23:05:50Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958, SensorReading { moisture: 399, temperature: 91.24501, full_spectrum: 9345, lux: 205.4654 }))
+[2024-07-25T23:05:56Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f]:1212 moisture 941 temp 91.14108
+[2024-07-25T23:05:56Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f, SensorReading { moisture: 941, temperature: 91.14108, full_spectrum: 3580, lux: 84.633026 }))
+[2024-07-25T23:05:59Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958]:1212 moisture 405 temp 91.43175
+[2024-07-25T23:05:59Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958, SensorReading { moisture: 405, temperature: 91.43175, full_spectrum: 9490, lux: 208.87677 }))
 ...
-[fdc9:fdb2:9fe8:1:d062:5abf:c70a:76b5]:1212 sent moisture: 326 temp 86.31459
-[fdc9:fdb2:9fe8:1:3715:a581:7786:efd9]:1212 sent moisture: 370 temp 88.52559
-[fdc9:fdb2:9fe8:1:9189:13e7:9ec2:ad68]:1212 sent moisture: 385 temp 89.96271
-[fdc9:fdb2:9fe8:1:d8a9:a6d9:398:ffcc]:1212 sent moisture: 364 temp 92.37707
-[fdc9:fdb2:9fe8:1:d366:bef0:62d5:2964]:1212 sent moisture: 370 temp 92.61803
-[2024-07-12T22:08:23Z DEBUG pmindb::broker] Polling for network change
-[2024-07-12T22:08:23Z DEBUG pmindb::broker] Polling for new nodes
-[2024-07-12T22:08:23Z DEBUG pmindb::broker] Polling for lost nodes
-[fdc9:fdb2:9fe8:1:d062:5abf:c70a:76b5]:1212 sent moisture: 326 temp 86.50314
-[fdc9:fdb2:9fe8:1:3715:a581:7786:efd9]:1212 sent moisture: 372 temp 87.80733
-[fdc9:fdb2:9fe8:1:9189:13e7:9ec2:ad68]:1212 sent moisture: 385 temp 90.1402
-[fdc9:fdb2:9fe8:1:d8a9:a6d9:398:ffcc]:1212 sent moisture: 365 temp 92.19032
-[fdc9:fdb2:9fe8:1:d366:bef0:62d5:2964]:1212 sent moisture: 370 temp 92.99008
-[2024-07-12T22:08:48Z DEBUG pmindb::broker] Polling for network change
-[2024-07-12T22:08:48Z DEBUG pmindb::broker] Polling for new nodes
-[2024-07-12T22:08:48Z DEBUG pmindb::broker] Polling for lost nodes
-[fdc9:fdb2:9fe8:1:d062:5abf:c70a:76b5]:1212 sent moisture: 325 temp 86.86919
-[fdc9:fdb2:9fe8:1:3715:a581:7786:efd9]:1212 sent moisture: 371 temp 88.7164
-[fdc9:fdb2:9fe8:1:9189:13e7:9ec2:ad68]:1212 sent moisture: 384 temp 90.68378
-[fdc9:fdb2:9fe8:1:d8a9:a6d9:398:ffcc]:1212 sent moisture: 365 temp 92.56378
-[fdc9:fdb2:9fe8:1:d366:bef0:62d5:2964]:1212 sent moisture: 373 temp 92.99008
-[2024-07-12T22:09:13Z DEBUG pmindb::broker] Polling for network change
+[2024-07-25T23:06:50Z DEBUG pmindb::broker] Polling for lost nodes
+[2024-07-25T23:07:11Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f]:1212 moisture 958 temp 91.14108
+[2024-07-25T23:07:11Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f, SensorReading { moisture: 958, temperature: 91.14108, full_spectrum: 3653, lux: 85.06385 }))
+[2024-07-25T23:07:14Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958]:1212 moisture 403 temp 90.684814
+[2024-07-25T23:07:14Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958, SensorReading { moisture: 403, temperature: 90.684814, full_spectrum: 10592, lux: 233.5217 }))
+[2024-07-25T23:07:15Z DEBUG pmindb::broker] Polling for network change
+[2024-07-25T23:07:15Z DEBUG pmindb::broker] Polling for new nodes
+[2024-07-25T23:07:15Z INFO  pmindb::broker] Starting CoAP Registration for fdc9:fdb2:9fe8:1:3907:598:9e77:3a97 on port 1231
+[2024-07-25T23:07:36Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f]:1212 moisture 943 temp 91.32147
+[2024-07-25T23:07:36Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:766d:d75b:52f7:c71f, SensorReading { moisture: 943, temperature: 91.32147, full_spectrum: 3514, lux: 82.03662 }))
+[2024-07-25T23:07:39Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958]:1212 moisture 399 temp 91.24501
+[2024-07-25T23:07:39Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:50f3:df65:c47a:d958, SensorReading { moisture: 399, temperature: 91.24501, full_spectrum: 8887, lux: 197.08366 }))
+[2024-07-25T23:07:45Z WARN  pmindb::broker] Registration failed, need to retry
+[2024-07-25T23:07:45Z INFO  pmindb::broker] Starting CoAP Registration for fdc9:fdb2:9fe8:1:c7bd:1e76:2eaa:f89d on port 1231
+[2024-07-25T23:07:45Z DEBUG pmindb::broker] Got a response from [fdc9:fdb2:9fe8:1:c7bd:1e76:2eaa:f89d]:1212, expected [fdc9:fdb2:9fe8:1:c7bd:1e76:2eaa:f89d]:1212
+[2024-07-25T23:07:45Z INFO  pmindb::monitor] Node rloc: 17478 node port 1231
+[2024-07-25T23:07:45Z DEBUG pmindb::monitor] Registering node rloc 17478 : port 1231
+[2024-07-25T23:07:45Z DEBUG pmindb::broker] Polling for lost nodes
+[2024-07-25T23:07:45Z TRACE pmindb::broker] Node being added to DB [96, 85, 249, 247, 8, 32] addr fdc9:fdb2:9fe8:1:c7bd:1e76:2eaa:f89d
+[2024-07-25T23:07:45Z TRACE pmindb::broker] Processing NodeEvent receiver as a stream
+[2024-07-25T23:07:45Z INFO  pmindb::db] Got a new node reg :) CreateOrModify { eui: [96, 85, 249, 247, 8, 32], ip: fdc9:fdb2:9fe8:1:c7bd:1e76:2eaa:f89d }
+[2024-07-25T23:07:45Z DEBUG pmindb::broker] Reading! from [fdc9:fdb2:9fe8:1:c7bd:1e76:2eaa:f89d]:1212 moisture 636 temp 88.520615
+[2024-07-25T23:07:45Z INFO  pmindb::db] Got a sensor reading :) NodeSensorReading((fdc9:fdb2:9fe8:1:c7bd:1e76:2eaa:f89d, SensorReading { moisture: 636, temperature: 88.520615, full_spectrum: 15705, lux: 359.24698 }))
 
 ```

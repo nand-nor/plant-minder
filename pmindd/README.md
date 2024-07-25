@@ -16,8 +16,8 @@ For older versions like 3b+ use the `armv7-unknown-linux-gnueabihf` target and t
 # Current working state
  
 Currently only very simple functionality is implemented. There is a simple asynchronous rendering of live sensor readings. These readings are rendered & outpit to the terminal 
-in a simple table. The below shows example output from the pi (via ssh session) that currently has 4 child nodes reporting moisture and temp (it is very hot here)
-![TerminalRendering](./../doc/simple_tui.png)
+in a simple table. The below shows example output from the pi (via ssh session) that currently has 4 child nodes reporting moisture, temp, full spectrum light and lux (using medium gain and 300MS integration time)
+![TerminalRendering](./../doc/simple_tui_v2.png)
 
 ## Needs (in no particular order)
 - Database integration (for showing historical trend graph)

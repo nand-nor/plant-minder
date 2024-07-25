@@ -1,15 +1,12 @@
 #![allow(unused)]
 /// TSL2951 light sensor
 /// port of https://github.com/adafruit/Adafruit_TSL2591_Library
-
-
 use embedded_hal::i2c::I2c;
 
 use core::ops::{BitAnd, BitOr, Shl, Shr};
 use esp_hal::delay::Delay;
 use pmindp_sensor::{
-    I2cError, LightLumenSensor, LightLuxSensor, LightSensorError, PlatformSensorError,
-    Sensor,
+    I2cError, LightLumenSensor, LightLuxSensor, LightSensorError, PlatformSensorError, Sensor,
 };
 
 #[derive(Debug)]
@@ -74,6 +71,7 @@ pub enum IntegrationTime {
 bitflags::bitflags! {
     /// TSL2591 register map
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[repr(C)]
     struct RegisterMap: u8 {
         /// Engable register
         const ENABLE= 0x00;
@@ -118,6 +116,7 @@ bitflags::bitflags! {
     }
 
     /// Function Commands / command & control flags
+    #[repr(C)]
     struct CmdControlFlags: u8 {
         /// 1010 0000: bits 7 and 5 for 'command normal'
         const COMMAND_BIT= 0xA0;
@@ -149,6 +148,11 @@ bitflags::bitflags! {
         const CMD_ENABLE_SET = Self::COMMAND_BIT.bits() | RegisterMap::ENABLE.bits();
         // device status
         const STATUS = Self::COMMAND_BIT.bits() | RegisterMap::DEVICE_STATUS.bits();
+
+        const ENABLE_FLAGS = Self::ENABLE_POWERON.bits()
+            | Self::ENABLE_AEN.bits()
+            | Self::ENABLE_AIEN.bits()
+            | Self::ENABLE_NPIEN.bits();
     }
 }
 
@@ -170,20 +174,19 @@ impl<I2C: I2c> TSL2591<I2C> {
 
     const CMD_ENABLE: [u8; 2] = [
         CmdControlFlags::CMD_ENABLE_SET.bits(),
-        CmdControlFlags::ENABLE_POWERON.bits()
-            | CmdControlFlags::ENABLE_AEN.bits()
-            | CmdControlFlags::ENABLE_AIEN.bits()
-            | CmdControlFlags::ENABLE_NPIEN.bits(),
+        CmdControlFlags::ENABLE_FLAGS.bits(),
     ];
 
     /// lux cooefficient
     const LUX_DF: f32 = 408.0;
+    /*
     /// channel 0 coefficient
     const LUX_COEFB: f32 = 1.64;
     /// channel 1 coefficient A
     const LUX_COEFC: f32 = 0.59;
     /// channel 2 coefficient
     const LUX_COEFD: f32 = 0.86;
+    */
 
     /// More consts for calculating lux
     const GAIN_LOW: f32 = 1.0;
@@ -209,9 +212,8 @@ impl<I2C: I2c> TSL2591<I2C> {
         };
 
         sensor.enable()?;
-        sensor.set_gain(Gain::default())?;
         sensor.set_timing(IntegrationTime::default())?;
-        //sensor.disable()?;
+        sensor.set_gain(Gain::default())?;
 
         Ok(sensor)
     }
@@ -221,22 +223,20 @@ impl<I2C: I2c> TSL2591<I2C> {
         gain: Option<Gain>,
         int_time: Option<IntegrationTime>,
     ) -> Result<(), Tsl2591Error> {
-        //    self.enable()?;
+        //   self.enable()?;
         if let Some(gain) = gain {
             self.set_gain(gain)?;
         }
         if let Some(int_time) = int_time {
             self.set_timing(int_time)?;
         }
-        //  self.disable()?;
+        //    self.disable()?;
         Ok(())
     }
 
     pub fn enable(&mut self) -> Result<(), I2cError> {
         self.i2c
-            .write(
-                self.address,
-                &Self::CMD_ENABLE)
+            .write(self.address, &Self::CMD_ENABLE)
             .map_err(|e| {
                 log::error!("i2c write error (enable) {e:?}");
                 I2cError::I2cWriteError
@@ -259,6 +259,7 @@ impl<I2C: I2c> TSL2591<I2C> {
     }
 
     fn set_gain(&mut self, gain: Gain) -> Result<(), I2cError> {
+        // sensor.enable()?;
         self.i2c
             .write(
                 self.address,
@@ -271,10 +272,12 @@ impl<I2C: I2c> TSL2591<I2C> {
                 log::error!("i2c write error (gain) {e:?}");
                 I2cError::I2cWriteError
             })?;
+        // sensor.disable()?;
         Ok(())
     }
 
     fn set_timing(&mut self, int_time: IntegrationTime) -> Result<(), I2cError> {
+        //sensor.enable()?;
         self.i2c
             .write(
                 self.address,
@@ -287,71 +290,82 @@ impl<I2C: I2c> TSL2591<I2C> {
                 log::error!("i2c write error (timing) {e:?}");
                 I2cError::I2cWriteError
             })?;
+        // sensor.disable()?;
         Ok(())
     }
 
-    fn get_channel_data(&mut self, write_buf: &[u8; 1]) -> Result<u16, I2cError> {
-        let mut channel_buff = [0u8; 2];
+    fn get_channel_data(&mut self) -> Result<u32, I2cError> {
+        let mut data = [0; 4];
         self.i2c
-            .write_read(self.address, write_buf, &mut channel_buff)
+            .write_read(
+                self.address,
+                &[CmdControlFlags::CMD_CHAN0_LOW_DATA.bits()],
+                &mut data,
+            )
             .map_err(|e| {
                 log::error!("i2c write error (write/read get channel data) {e:?}");
                 I2cError::I2cWriteReadError
             })?;
-        let channel: u16 = (channel_buff[0] as u16).shl(8);
-        let channel: u16 = channel.bitor(channel_buff[1] as u16);
-
-        Ok(channel)
+        Ok(u32::from(data[0])
+            | (u32::from(data[1]) << 8)
+            | (u32::from(data[2]) << 16)
+            | (u32::from(data[3]) << 24))
     }
 
-    fn get_luminosity(&mut self) -> Result<u16, Tsl2591Error> {
-        // self.enable()?;
-        self.delay.delay_millis(120);
-        let channel_0 = self.get_channel_data(&[CmdControlFlags::CMD_CHAN0_LOW_DATA.bits()])?;
-        let channel_1 = self.get_channel_data(&[CmdControlFlags::CMD_CHAN1_LOW_DATA.bits()])?;
+    fn get_luminosity(&mut self, channel: Mode) -> Result<u16, Tsl2591Error> {
+        let full_luminosity = self.get_full_luminosity()?;
 
-        let lumens: u32 = ((channel_1 as u32).shl(16));
-        let lumens: u32 = lumens.bitor(channel_0 as u32);
+        // ir + visible
+        let full: u16 = full_luminosity.bitand(0xffff) as u16;
+        // ir
+        let infra: u16 = full_luminosity.shr(16) as u16;
 
-        // self.disable()?;
-        match self.mode {
+        match channel {
             Mode::Visible => {
-                let check = lumens.bitand(0xffff);
-                let infra = lumens.shr(16);
-                if check < infra {
+                if full < infra {
                     return Err(Tsl2591Error::SignalOverflow);
                 }
-                Ok(TryInto::<u16>::try_into(check.wrapping_sub(infra)).unwrap_or_default())
+                Ok((full - infra))
             }
-            Mode::Infrared => Ok(TryInto::<u16>::try_into(lumens.shr(16)).unwrap_or_default()),
-            Mode::FullSpectrum => {
-                Ok(TryInto::<u16>::try_into(lumens.bitand(0xffff)).unwrap_or_default())
-            }
+            Mode::Infrared => Ok(infra),
+            Mode::FullSpectrum => Ok(full),
         }
     }
 
-    fn get_lux(&mut self) -> Result<f32, Tsl2591Error> {
-        //self.enable()?;
+    fn get_full_luminosity(&mut self) -> Result<u32, Tsl2591Error> {
         self.delay.delay_millis(120);
-        let channel_0 = self.get_channel_data(&[CmdControlFlags::CMD_CHAN0_LOW_DATA.bits()])?;
-        let channel_1 = self.get_channel_data(&[CmdControlFlags::CMD_CHAN1_LOW_DATA.bits()])?;
+        Ok(self.get_channel_data()?)
+    }
 
-        //self.disable()?;
+    /// https://github.com/adafruit/Adafruit_TSL2591_Library/blob/master/Adafruit_TSL2591.cpp#L225
+    fn get_lux(&mut self) -> Result<f32, Tsl2591Error> {
+        self.delay.delay_millis(120);
+        let full_luminosity = self.get_channel_data()?;
+        // ir
+        let infra: u32 = full_luminosity.shr(16);
+        let infra: f32 = infra.bitand(0xffff) as f32;
+        // ir + visible
+        let full = full_luminosity.bitand(0xffff) as f32;
 
-        // Note: This algorithm is pulled from
-        // https://github.com/adafruit/Adafruit_TSL2591_Library/blob/master/Adafruit_TSL2591.cpp#L225
-        if (channel_0 == 0xFFFF) | (channel_1 == 0xFFFF) {
+        if (full as u16 == 0xffff) || (infra as u16 == 0xffff) {
             return Err(Tsl2591Error::SignalOverflow);
         }
 
-        let int = self.get_int_time_float();
-        let gain = self.get_gain_float();
+        let time_factor = self.get_int_time_float();
+        let gain_factor = self.get_gain_float();
 
-        let check: f32 = (int * gain) / Self::LUX_DF;
+        let check = (time_factor * gain_factor) / Self::LUX_DF;
 
-        let lux = (channel_0 as f32 - channel_1 as f32)
-            * (1.0 - (channel_1 as f32 / channel_0 as f32))
-            / check;
+        /*
+        let lux1 = (full - (Self::LUX_COEFB * infra)) / check;
+        let lux2 = ((Self::LUX_COEFC * full) - (Self::LUX_COEFD * infra)) / check;
+        let lux = lux1.max(lux2);
+        */
+        if full < infra || full == 0.0 {
+            return Err(Tsl2591Error::SignalOverflow);
+        }
+
+        let lux = (full - infra) * (1.0 - (infra / full)) / check;
 
         Ok(lux)
     }
@@ -382,11 +396,30 @@ where
     I2C: I2c,
 {
     fn luminosity(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, LightSensorError> {
-        let reading = self.get_luminosity().map_err(LightSensorError::from)?;
-        log::info!("lumens {:?}", reading);
+        let mut local_start = start;
+        let full_spec = self
+            .get_luminosity(Mode::FullSpectrum)
+            .map_err(LightSensorError::from)?;
+        log::info!("Full spectrum luminosity {:?}", full_spec);
 
         let size = core::mem::size_of::<u16>();
-        buffer[start..start + size].copy_from_slice(&reading.to_le_bytes());
+        buffer[local_start..local_start + size].copy_from_slice(&full_spec.to_le_bytes());
+        /*  local_start += size;
+
+        let visible = self.get_luminosity(Mode::Visible).map_err(LightSensorError::from)?;
+        log::info!("Visible spectrum luminosity {:?}",visible);
+
+        let size = core::mem::size_of::<u16>();
+        buffer[local_start..local_start + size].copy_from_slice(&visible.to_le_bytes());
+        local_start += size;
+
+        let infra = self.get_luminosity(Mode::Infrared).map_err(LightSensorError::from)?;
+        log::info!("Infrared luminosity {:?}", infra);
+
+        let size = core::mem::size_of::<u16>();
+        buffer[local_start..local_start + size].copy_from_slice(&infra.to_le_bytes());
+        */
+
         Ok(size)
     }
 }

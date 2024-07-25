@@ -2,15 +2,12 @@ use core::{cell::RefCell, pin::pin};
 
 use esp_hal_smartled::SmartLedsAdapter;
 
-use esp_hal::{
-    reset::software_reset_cpu, rmt::Channel, Blocking,
-};
+use esp_hal::{reset::software_reset_cpu, rmt::Channel, Blocking};
 
 use critical_section::Mutex;
 use esp_ieee802154::Config;
 use esp_openthread::{
-    NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset,
-    ThreadTimestamp,
+    NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadTimestamp,
 };
 
 use coap_lite::{CoapRequest, Packet};
@@ -18,9 +15,7 @@ use coap_lite::{CoapRequest, Packet};
 use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
 use alloc::{boxed::Box, vec::Vec};
-use pmindp_sensor::{
-    PlatformSensorError, Sensor, SensorPlatform, 
-};
+use pmindp_sensor::{PlatformSensorError, Sensor, SensorPlatform};
 
 use crate::SENSOR_TIMER_FIRED;
 
@@ -55,7 +50,7 @@ where
         Self {
             led,
             openthread,
-            sensors, 
+            sensors,
         }
     }
 
@@ -110,7 +105,8 @@ where
             let mut socket = pin!(socket);
             socket.bind(BOUND_PORT).unwrap();
 
-            let mut send_data_buf: [u8; 12] = [0u8; 12];
+            // make this big
+            let mut send_data_buf: [u8; 56] = [0u8; 56];
             loop {
                 self.openthread.process();
                 self.openthread.run_tasklets();
@@ -225,7 +221,7 @@ fn print_all_addresses(addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6>) 
 
 // TODO! Need to ensure that input buffer is long enough for the
 // sensors to write to, since a variable number of sensors could be
-// attached 
+// attached
 impl<'a> SensorPlatform for Esp32Platform<'a> {
     fn sensor_read(&self, buffer: &mut [u8]) -> Result<(), PlatformSensorError> {
         // track write indices so read ops can write to the buffer in the correct place
@@ -240,7 +236,7 @@ impl<'a> SensorPlatform for Esp32Platform<'a> {
                 log::error!("Error reading from light sensor {e:?}");
             }) {
                 start = start + size;
-            } 
+            }
         });
         Ok(())
     }

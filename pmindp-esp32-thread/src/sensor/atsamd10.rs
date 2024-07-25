@@ -4,7 +4,7 @@
 use embedded_hal::i2c::I2c;
 
 use esp_hal::delay::Delay;
-use pmindp_sensor::{PlatformSensorError, Sensor, SoilSensorError, MoistureSensor, TempSensor};
+use pmindp_sensor::{MoistureSensor, PlatformSensorError, Sensor, SoilSensorError, TempSensor};
 
 use core::result::Result;
 use core::result::Result::Ok;
@@ -66,7 +66,6 @@ impl<I2C: I2c> ATSAMD10<I2C> {
         Ok((raw * 1.8) + 32.0)
     }
 }
-
 
 impl<I2C> MoistureSensor for ATSAMD10<I2C>
 where

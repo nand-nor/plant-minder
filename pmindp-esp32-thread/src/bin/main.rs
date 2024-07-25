@@ -89,7 +89,7 @@ fn main() -> ! {
             panic!("No sensors specified")
         }
     }
-    
+
     // optionally enable light sensor as well
     cfg_if::cfg_if! {
         if #[cfg(feature="tsl2591")] {

@@ -91,6 +91,10 @@ The main responsibility of this layer will be displaying sensor data as it is re
 
 An additional goal for this layer is to interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. I am striving for this to be as simple as possible-- all I need is to be provided with a visual cue that it is time to water my plants. 
 
+Currently only simple data is rendered: soil moisture, temp, full spectrum light and lux 
+
+<img src="./doc/simple_tui_v2.png" width="600" height="340"> 
+
 More info on current status, build info, and [other details here](./pmindd/README.md).
 
 

@@ -32,23 +32,34 @@ pub fn render(app: &mut PlantMinder, frame: &mut Frame) {
 pub fn render_table(app: &mut PlantMinder, f: &mut Frame, area: Rect) {
     let header_style = Style::default().fg(Color::Cyan).bg(Color::Black);
 
-    let header = ["Node", "Moisture", "Temperature"]
-        .into_iter()
-        .map(Cell::from)
-        .collect::<Row>()
-        .style(header_style)
-        .height(1);
+    let header = [
+        "Node",
+        "Moisture",
+        "Temperature",
+        "Full Spectrum Light",
+        "Lux",
+    ]
+    .into_iter()
+    .map(Cell::from)
+    .collect::<Row>()
+    .style(header_style)
+    .height(1);
 
     let rows = app.node_data.iter().map(|(addr, data)| {
         let (row_color, text_color) = (Color::Black, Color::Cyan);
 
         // just take the last pushed value for now
-        let (moisture, temperature) = {
+        let (moisture, temperature, full_spectrum, lux) = {
             if data.is_empty() {
-                (0, 0.0)
+                (0, 0.0, 0, 0.0)
             } else {
                 let len = data.len();
-                (data[len - 1].data.moisture, data[len - 1].data.temperature)
+                (
+                    data[len - 1].data.moisture,
+                    data[len - 1].data.temperature,
+                    data[len - 1].data.full_spectrum,
+                    data[len - 1].data.lux,
+                )
             }
         };
 
@@ -56,6 +67,8 @@ pub fn render_table(app: &mut PlantMinder, f: &mut Frame, area: Rect) {
             addr.to_string(),
             moisture.to_string(),
             temperature.to_string(),
+            full_spectrum.to_string(),
+            lux.to_string(),
         ])
         .style(Style::new().fg(text_color).bg(row_color))
         .height(3)
@@ -66,6 +79,8 @@ pub fn render_table(app: &mut PlantMinder, f: &mut Frame, area: Rect) {
         rows,
         [
             Constraint::Length(50),
+            Constraint::Min(10),
+            Constraint::Min(10),
             Constraint::Min(10),
             Constraint::Min(10),
         ],
