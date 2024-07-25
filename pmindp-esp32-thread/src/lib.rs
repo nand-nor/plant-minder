@@ -54,9 +54,7 @@ use esp_hal::{
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_ieee802154::Ieee802154;
 
-use pmindp_sensor::{
-     Sensor, SensorPlatform,
-};
+use pmindp_sensor::{Sensor, SensorPlatform};
 
 use alloc::{boxed::Box, vec::Vec};
 
@@ -103,11 +101,7 @@ where
     let timer = timg0.timer0;
     setup_sensor_timer(timer, 25000);
 
-    Esp32Platform::new(
-        led,
-        openthread,
-        sensors,
-    )
+    Esp32Platform::new(led, openthread, sensors)
 }
 
 #[handler]
