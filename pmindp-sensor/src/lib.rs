@@ -19,6 +19,7 @@ pub struct SensorReading {
     pub temperature: f32,
     pub full_spectrum: u16,
     pub lux: f32,
+    pub timestamp: i64, // filled in by broker
 }
 
 /// [`SensorPlatform`] trait defines the sensor read operation for the platform,

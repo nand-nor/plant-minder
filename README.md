@@ -65,7 +65,7 @@ The `pmindp-esp32-thread` crate contains all the code for building & flashing th
 
 As mentioned above, Thread provides the transport layer for reporting sensor data to the RPI. The code in the `pmindp-esp32-thread` crate programs the boards to program a hardcoded operational dataset to auto-attach to the Thread mesh network as a minimal thread device (MTD). It is worth noting that there is no support for NCP or RCP modes in the `esp-openthread` repo currently (these boards dont need it), so no need for dealing with any spinel shennanigans. 
 
-For the soil sensor, the code currently only supports [Seesaw Capacitive moisture sensor (ATSAMD10)](https://www.adafruit.com/product/4026). Although I do have some plans to eventually  support other sensors (both different soil sensors and other sensor types like humidity / light/etc.).
+The code currently supports various sensors including a capacitive soil sensor and a resistive sensor for soil moisture, as well as a light sensor.
 
 ### Broker Layer 
 
@@ -91,9 +91,9 @@ The main responsibility of this layer will be displaying sensor data as it is re
 
 An additional goal for this layer is to interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. I am striving for this to be as simple as possible-- all I need is to be provided with a visual cue that it is time to water my plants. 
 
-Currently only simple data is rendered: soil moisture, temp, full spectrum light and lux 
+Currently only simple data is rendered: soil moisture, temp, full spectrum light and lux, each as a graph rendered by node. 
 
-<img src="./doc/simple_tui_v2.png" width="600" height="340"> 
+<img src="./doc/lux_over_time.png" width="600" height="340"> 
 
 More info on current status, build info, and [other details here](./pmindd/README.md).
 

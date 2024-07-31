@@ -2,19 +2,29 @@ use tokio::sync::mpsc::unbounded_channel;
 
 use pmindb::BrokerCoordinator;
 use pmindd::{
-    event::{
-        handle_key_input_events, handle_node_reg_task, handle_sensor_stream_task, Event,
-        EventHandler,
-    },
-    minder::{PlantMinder, PlantMinderResult},
-    ui::Tui,
+    event::{handle_app_cmd, handle_node_reg_task, handle_sensor_stream_task, Event, EventHandler},
+    minder::{PlantMinder, PlantMinderResult, Tui},
 };
+use tracing_appender::rolling;
+use tracing_subscriber::FmtSubscriber;
+
+use log;
+use tracing_log::LogTracer;
 
 #[actix::main]
 async fn main() -> PlantMinderResult<()> {
-    env_logger::init();
+    LogTracer::init().expect("Unable to set up log tracer");
 
-    // TODO pipe logging to file?
+    // TODO set up some kind of log zip / roll functionality
+    let log = rolling::daily("./logs", "debug");
+    let (nb, _guard) = tracing_appender::non_blocking(log);
+
+    let sub = FmtSubscriber::builder()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(nb)
+        .finish();
+
+    tracing::subscriber::set_global_default(sub).expect("Unable to set up tracing subscriber");
 
     let (stream_tx, stream_rx) = unbounded_channel();
     let (registration_tx, registration_rx) = unbounded_channel();
@@ -39,7 +49,7 @@ async fn main() -> PlantMinderResult<()> {
         tui.draw(&mut app)?;
         match events.next().await {
             Ok(Event::Tick) => app.tick().await,
-            Ok(Event::Key(key_event)) => handle_key_input_events(key_event, &mut app).await,
+            Ok(Event::AppCmd(cmd)) => handle_app_cmd(cmd, &mut app).await,
             Ok(Event::SensorNodeEvent(r)) => {
                 handle_sensor_stream_task(&mut app, r).await;
             }

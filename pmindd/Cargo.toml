@@ -16,7 +16,12 @@ futures = "0.3.30"
 ratatui = { version = "0.27.0", features = ["all-widgets", "serde"]}
 actix = {version = "0.13.5", features=["macros"]}
 tokio-stream = "0.1.15"
-
+chrono = {version="0.4.38"}
+hex = "0.4.3"
+tracing-subscriber = "0.3.0"
+tracing = "0.1.40"
+tracing-appender = "0.2.3"
+tracing-log = "0.2.0"
 
 [[bin]]
 path = "./src/bin/main.rs"

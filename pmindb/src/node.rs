@@ -1,3 +1,4 @@
+use chrono::Utc;
 /// Responsibilities:
 /// 1. Open new socket to get sensor data from it (using the port sent in the registration)
 /// 2. Notify broker when node stops sending data
@@ -5,7 +6,6 @@
 use pmindp_sensor::SensorReading;
 use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
 use tokio::{net::UdpSocket, sync::mpsc};
-
 #[derive(Debug, Clone, Copy)]
 pub enum NodeEvent {
     NodeTimeout(SocketAddrV6),
@@ -89,10 +89,11 @@ impl NodeEventHandler {
                                     let mut lux_s: [u8; 4] = [0u8; 4];
                                     lux_s.copy_from_slice(&buffer[8..12]);
                                     let lux = f32::from_le_bytes(lux_s);
+
                                     // TODO error handling
                                     _sender.send(NodeEvent::SensorReading(NodeSensorReading {
                                         addr: node_addr,
-                                        data: SensorReading { moisture, temperature, full_spectrum, lux, }
+                                        data: SensorReading { moisture, temperature, full_spectrum, lux, timestamp: Utc::now().timestamp() }
                                     })
                                     ).ok();
                                 }
