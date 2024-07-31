@@ -15,14 +15,12 @@ For older versions like 3b+ use the `armv7-unknown-linux-gnueabihf` target and t
 
 # Current working state
  
-Currently only very simple functionality is implemented. There is a simple asynchronous rendering of live sensor readings. These readings are rendered & outpit to the terminal 
-in a simple table. The below shows example output from the pi (via ssh session) that currently has 4 child nodes reporting moisture, temp, full spectrum light and lux (using medium gain and 300MS integration time)
-![TerminalRendering](./../doc/simple_tui_v2.png)
+Currently only very simple functionality is implemented. There is a simple asynchronous rendering of live sensor readings. There is a landing page that displays the general state of each plant (E.g. if it needs to be watered or not). With keyboard input, a user can use tab/backtab to scroll through historical views of data displaying moisture, temperature, lux, or full spetrum luminsoity readings. These readings are rendered as graphs are displayed by node, and you can scroll through each node's view (by scrolling up or down). The below shows example output from the pi (via ssh session) that currently has 4 child nodes reporting moisture, temp, full spectrum light and lux (using medium gain and 300MS integration time). This particular graph is showing lux:
+![TerminalRendering](./../doc/lux_over_time.png)
 
 ## Needs (in no particular order)
 - Database integration (for showing historical trend graph)
 - Database management? Probably need an ORM
-- Graph rendering (historical trends)
 - Plant record creation, to allow associating a sensor with a plant record (will probably be parsed from a toml file at first with a file watch to update it dynamically)
 - Optionally piping logs to file (and log management)
 - Loads of other stuff 

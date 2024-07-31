@@ -1,4 +1,4 @@
-use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyModifiers};
 use futures::{FutureExt, StreamExt};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -8,15 +8,29 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use pmindb::{NodeEvent, NodeSensorReading, Registration};
 
 use crate::{
-    minder::{PlantMinder, PlantMinderResult},
+    minder::{PlantMinder, PlantMinderResult, NUM_TABS},
     PlantMinderError,
 };
 
+/// Backend event
 pub enum Event {
     Tick,
-    Key(KeyEvent),
+    AppCmd(AppCmd),
     NodeRegistration(Registration),
     SensorNodeEvent(UnboundedReceiver<NodeEvent>),
+}
+
+/// App command is derived
+/// from user input
+#[derive(Debug)]
+pub enum AppCmd {
+    Quit,
+    Invalid,
+    Error,
+    Next,
+    Back,
+    Up,
+    Down,
 }
 
 #[allow(dead_code)]
@@ -61,7 +75,27 @@ impl EventHandler {
                     match evt {
                       CrosstermEvent::Key(key) => {
                         if key.kind == crossterm::event::KeyEventKind::Press {
-                          _sender.send(Event::Key(key)).unwrap();
+
+                          let cmd = match key.code {
+                            KeyCode::Esc | KeyCode::Char('q')  | KeyCode::Char('Q') => {
+                                AppCmd::Quit
+                            }
+                            KeyCode::Char('c') | KeyCode::Char('C') => {
+                                if key.modifiers == KeyModifiers::CONTROL {
+                                    AppCmd::Quit
+                                } else {
+                                    AppCmd::Invalid
+                                }
+                            },
+
+                            KeyCode::Tab => AppCmd::Next,
+                            KeyCode::BackTab => AppCmd::Back,
+                            KeyCode::Up => AppCmd::Up,
+                            KeyCode::Down => AppCmd::Down,
+                            _ => AppCmd::Invalid,
+                        };
+                        _sender.send(Event::AppCmd(cmd)).unwrap();
+
                         }
                       },
                       e => {
@@ -70,12 +104,12 @@ impl EventHandler {
                     }
                   }
                  Some(node_evt) = node_event_stream => {
-                    log::info!("node event {node_evt:?}");
+                    log::debug!("node event {node_evt:?}");
                     _sender.send(Event::SensorNodeEvent(node_evt)).unwrap();
 
                   }
                   Some(reg) = node_reg_stream => {
-                    log::info!("Node registration {reg:?}");
+                    log::debug!("Node registration {reg:?}");
                     _sender.send(Event::NodeRegistration(reg)).unwrap();
 
                   }
@@ -98,19 +132,41 @@ impl EventHandler {
     }
 }
 
-pub async fn handle_key_input_events(key_event: KeyEvent, app: &mut PlantMinder) {
-    match key_event.code {
-        // Exit application on `ESC` or `q`
-        KeyCode::Esc | KeyCode::Char('q') => {
-            app.quit();
-        }
-        // Exit application on `Ctrl-C`
-        KeyCode::Char('c') | KeyCode::Char('C') => {
-            if key_event.modifiers == KeyModifiers::CONTROL {
-                app.quit();
+pub async fn handle_app_cmd(cmd: AppCmd, app: &mut PlantMinder) {
+    match cmd {
+        AppCmd::Quit => app.quit(),
+        AppCmd::Next => {
+            if app.tab == NUM_TABS - 1 {
+                app.tab = 0;
+            } else {
+                app.tab += 1;
             }
         }
-        _ => {}
+        AppCmd::Back => {
+            if app.tab == 0 {
+                app.tab = NUM_TABS - 1;
+            } else {
+                app.tab -= 1;
+            }
+        }
+        AppCmd::Down => {
+            app.row += 1;
+        }
+        AppCmd::Up => {
+            if app.row == 0 {
+                if !app.node_addrs.is_empty() {
+                    app.row = app.node_addrs.len() - 1;
+                } else {
+                    app.row = 0;
+                }
+            } else {
+                app.row -= 1;
+            }
+        }
+        e => {
+            log::debug!("Unimplemented event received {e:?}");
+            // drop it for now
+        }
     }
 }
 
@@ -127,6 +183,7 @@ pub async fn handle_sensor_stream_task(app: &mut PlantMinder, rcv: UnboundedRece
 async fn sensor_stream_process(
     mut stream: UnboundedReceiverStream<NodeEvent>,
     sender: UnboundedSender<NodeSensorReading>,
+    // sender: UnboundedSender<NodeSensorReading>,
 ) {
     log::trace!("Processing NodeEvent receiver as a stream");
     while let Some(msg) = stream.next().await {
