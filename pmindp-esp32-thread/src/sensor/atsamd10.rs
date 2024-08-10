@@ -1,11 +1,8 @@
 /// [Seesaw soil sensor](https://www.adafruit.com/product/4026)
-/// This is the default soil sensor for programming
-/// dev boards
-use embedded_hal::i2c::I2c;
 
+use embedded_hal::i2c::I2c;
 use esp_hal::delay::Delay;
 use pmindp_sensor::{MoistureSensor, PlatformSensorError, Sensor, SoilSensorError, TempSensor};
-
 use core::result::Result;
 use core::result::Result::Ok;
 
@@ -67,28 +64,26 @@ impl<I2C: I2c> ATSAMD10<I2C> {
     }
 }
 
+#[allow(unused)]
 impl<I2C> MoistureSensor for ATSAMD10<I2C>
 where
     I2C: I2c,
 {
     fn moisture(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError> {
         let reading = self.moisture().map_err(SoilSensorError::from)?;
-        log::info!("moisture {:?}", reading);
-
         let size = core::mem::size_of::<u16>();
         buffer[start..start + size].copy_from_slice(&reading.to_le_bytes());
         Ok(size)
     }
 }
 
+#[allow(unused)]
 impl<I2C> TempSensor for ATSAMD10<I2C>
 where
     I2C: I2c,
 {
     fn temperature(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError> {
         let reading = self.temperature().map_err(SoilSensorError::from)?;
-        log::info!("temperature {:?}", reading);
-
         let size = core::mem::size_of::<f32>();
         buffer[start..start + size].copy_from_slice(&reading.to_le_bytes());
         Ok(size)
@@ -100,10 +95,22 @@ where
     I2C: I2c,
 {
     fn read(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, PlatformSensorError> {
-        let size_1 = <Self as MoistureSensor>::moisture(self, buffer, start)
-            .map_err(|e| PlatformSensorError::from(e))?;
-        let size_2 = <Self as TempSensor>::temperature(self, buffer, start + size_1)
-            .map_err(|e| PlatformSensorError::from(e))?;
-        Ok(size_1 + size_2)
+        let temperature = self.temperature().map_err(SoilSensorError::from)?;
+        log::debug!("temperature {:?}", temperature);
+        let moisture = self.moisture().map_err(SoilSensorError::from)?;
+        log::debug!("moisture {:?}", moisture);
+
+        let reading: pmindp_sensor::SoilSensorReading = pmindp_sensor::SoilSensorReading {
+            moisture,
+            temperature,
+        };
+
+        let reading = serde_json::to_vec(&reading).map_err(|e| {
+            log::error!("Serde failed {e:}");
+            PlatformSensorError::Other
+        })?;
+        let len = reading.len();
+        buffer[start..start + len].copy_from_slice(&reading);
+        Ok(len)
     }
 }

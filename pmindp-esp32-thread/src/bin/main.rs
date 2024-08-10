@@ -18,7 +18,7 @@ extern crate alloc;
 
 //#[cfg(feature = "atsamd10")]
 //use esp_hal::i2c::I2C;
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 
 use pmindp_sensor::Sensor;
 
@@ -58,7 +58,7 @@ fn main() -> ! {
     let i2c_ref_cell = RefCell::new(i2c);
     let i2c_ref_cell: &'static _ = Box::leak(Box::new(i2c_ref_cell));
 
-    let mut sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>> = vec![];
+    let mut sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>> = Vec::with_capacity(pmindp_sensor::MAX_SENSORS);
 
     // Require at least a moisture sensor
     cfg_if::cfg_if! {
@@ -71,7 +71,7 @@ fn main() -> ! {
                 delay: Delay::new(&clocks)
             };
 
-            sensors.push(Mutex::new(RefCell::new(Box::new(soil_sensor))));
+            sensors.insert(pmindp_sensor::SOIL_IDX, Mutex::new(RefCell::new(Box::new(soil_sensor))));
 
         } else if #[cfg(feature="probe-circuit")] {
             let soil_sensor = pmindp_esp32_thread::ProbeCircuit::new(
@@ -83,7 +83,7 @@ fn main() -> ! {
                 peripherals.ADC1,
                 Delay::new(&clocks)
             );
-            sensors.push(Mutex::new(RefCell::new(Box::new(soil_sensor))));
+            sensors.insert(pmindp_sensor::SOIL_IDX, Mutex::new(RefCell::new(Box::new(soil_sensor))));
         } else {
             log::error!("No sensor target specified!");
             panic!("No sensors specified")
@@ -98,7 +98,7 @@ fn main() -> ! {
                 0x29,
                 Delay::new(&clocks)
             ).unwrap();
-            sensors.push(Mutex::new(RefCell::new(Box::new(light_sensor))));
+            sensors.insert(pmindp_sensor::LIGHT_IDX_1, Mutex::new(RefCell::new(Box::new(light_sensor))));
         }
     }
 

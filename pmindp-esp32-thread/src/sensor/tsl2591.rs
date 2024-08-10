@@ -391,6 +391,7 @@ impl<I2C: I2c> TSL2591<I2C> {
     }
 }
 
+#[allow(unused)]
 impl<I2C> LightLumenSensor for TSL2591<I2C>
 where
     I2C: I2c,
@@ -400,37 +401,22 @@ where
         let full_spec = self
             .get_luminosity(Mode::FullSpectrum)
             .map_err(LightSensorError::from)?;
-        log::info!("Full spectrum luminosity {:?}", full_spec);
+        log::debug!("Full spectrum luminosity {:?}", full_spec);
 
         let size = core::mem::size_of::<u16>();
-        buffer[local_start..local_start + size].copy_from_slice(&full_spec.to_le_bytes());
-        /*  local_start += size;
-
-        let visible = self.get_luminosity(Mode::Visible).map_err(LightSensorError::from)?;
-        log::info!("Visible spectrum luminosity {:?}",visible);
-
-        let size = core::mem::size_of::<u16>();
-        buffer[local_start..local_start + size].copy_from_slice(&visible.to_le_bytes());
-        local_start += size;
-
-        let infra = self.get_luminosity(Mode::Infrared).map_err(LightSensorError::from)?;
-        log::info!("Infrared luminosity {:?}", infra);
-
-        let size = core::mem::size_of::<u16>();
-        buffer[local_start..local_start + size].copy_from_slice(&infra.to_le_bytes());
-        */
-
+        buffer[start..start + size].copy_from_slice(&full_spec.to_le_bytes());
         Ok(size)
     }
 }
 
+#[allow(unused)]
 impl<I2C> LightLuxSensor for TSL2591<I2C>
 where
     I2C: I2c,
 {
     fn lux(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, LightSensorError> {
         let reading = self.get_lux().map_err(LightSensorError::from)?;
-        log::info!("lux {:?}", reading);
+        log::debug!("lux {:?}", reading);
 
         let size = core::mem::size_of::<f32>();
         buffer[start..start + size].copy_from_slice(&reading.to_le_bytes());
@@ -443,10 +429,23 @@ where
     I2C: I2c,
 {
     fn read(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, PlatformSensorError> {
-        let size_1 = <Self as LightLumenSensor>::luminosity(self, buffer, start)
-            .map_err(|e| PlatformSensorError::from(e))?;
-        let size_2 = <Self as LightLuxSensor>::lux(self, buffer, start + size_1)
-            .map_err(|e| PlatformSensorError::from(e))?;
-        Ok(size_1 + size_2)
+        let full_spectrum = self
+            .get_luminosity(Mode::FullSpectrum)
+            .map_err(LightSensorError::from)?;
+        log::debug!("Full spectrum luminosity {:?}", full_spectrum);
+        let lux = self.get_lux().map_err(LightSensorError::from)?;
+        log::debug!("lux {:?}", lux);
+        let reading: pmindp_sensor::LightSensorReading =
+            pmindp_sensor::LightSensorReading { lux, full_spectrum };
+
+        let reading = serde_json::to_vec(&reading).map_err(|e| {
+            log::error!("Serde failed {e:}");
+            PlatformSensorError::Other
+        })?;
+        let len = reading.len();
+
+        buffer[start..start + len].copy_from_slice(&reading);
+
+        Ok(len)
     }
 }

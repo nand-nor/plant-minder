@@ -74,26 +74,17 @@ impl NodeEventHandler {
                                 } else {
                                     log::warn!("Non-ipv6 address sent data to our sensor port {from:}");
                                 }
-                                if len >= 12 {
-                                    // TODO define this method in pmindp-sensor ? Or figure out if we can use
-                                    // serde / serde_json in no_std
-                                    let mut moisture_s: [u8; 2] = [0u8; 2];
-                                    moisture_s.copy_from_slice(&buffer[..2]);
-                                    let moisture = u16::from_le_bytes(moisture_s);
-                                    let mut temp_s: [u8; 4] = [0u8; 4];
-                                    temp_s.copy_from_slice(&buffer[2..6]);
-                                    let temperature = f32::from_le_bytes(temp_s);
-                                    let mut full_spectrum_s: [u8; 2] = [0u8; 2];
-                                    full_spectrum_s.copy_from_slice(&buffer[6..8]);
-                                    let full_spectrum = u16::from_le_bytes(full_spectrum_s);
-                                    let mut lux_s: [u8; 4] = [0u8; 4];
-                                    lux_s.copy_from_slice(&buffer[8..12]);
-                                    let lux = f32::from_le_bytes(lux_s);
+
+                                if let Ok(mut data) = serde_json::from_slice::<pmindp_sensor::SensorReading>(&buffer[..len]).map_err(|e|{
+                                    log::error!("Deserde error {e:} len {:?}", len);
+                                }) {
+                                    log::trace!("got data from node {:?}", data);
+                                    data.timestamp = Utc::now().timestamp();
 
                                     // TODO error handling
                                     _sender.send(NodeEvent::SensorReading(NodeSensorReading {
                                         addr: node_addr,
-                                        data: SensorReading { moisture, temperature, full_spectrum, lux, timestamp: Utc::now().timestamp() }
+                                        data,
                                     })
                                     ).ok();
                                 }
