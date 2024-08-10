@@ -1,9 +1,11 @@
 mod atsamd10;
+#[cfg(not(feature = "esp32h2"))]
 mod probe_circuit;
 mod st0160;
 mod tsl2591;
 
 //#[cfg(all(feature = "probe-circuit", not(feature = "atsamd10", feature = "st0160")))]
+#[cfg(not(feature = "esp32h2"))]
 pub use probe_circuit::ProbeCircuit;
 
 //#[cfg(all(feature = "atsamd10", not(feature = "probe-circuit", feature = "st0160")))]

@@ -32,7 +32,12 @@ mod sensor;
 
 pub use crate::{
     platform::Esp32Platform,
-    sensor::{ProbeCircuit, ATSAMD10, TSL2591},
+    sensor::{ATSAMD10, TSL2591},
+};
+
+#[cfg(not(feature = "esp32h2"))]
+pub use crate::{
+    sensor::ProbeCircuit,
 };
 
 use core::{cell::RefCell, ptr::addr_of_mut};
