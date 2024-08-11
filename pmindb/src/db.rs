@@ -68,7 +68,7 @@ impl PlantDatabase {
     ) -> Result<(), DatabaseError> {
         self.conn.execute(
             "INSERT INTO readings (sensor_id, moisture, temperature) VALUES (?1), (?2), (?3)",
-            params![sensor_id, reading.moisture, reading.temperature],
+            params![sensor_id, reading.soil.moisture, reading.soil.temperature],
         )?;
 
         Ok(())

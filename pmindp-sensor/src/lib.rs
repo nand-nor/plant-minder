@@ -13,20 +13,44 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[derive(Debug, Clone, Copy)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
 pub struct SensorReading {
+    pub soil: SoilSensorReading,
+    #[serde(default)]
+    /// If no light sensor is configured,
+    /// then these should be populated with 0s
+    pub light: LightSensorReading,
+    #[serde(default)]
+    pub timestamp: i64,
+}
+
+pub const MAX_SENSORS: usize = 5;
+pub const SOIL_IDX: usize = 0;
+pub const LIGHT_IDX_1: usize = 1;
+pub const HUM_IDX: usize = 2;
+pub const LIGHT_IDX_2: usize = 3;
+pub const OTHER_IDX: usize = 4;
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+pub struct SoilSensorReading {
     pub moisture: u16,
+    #[serde(default)]
     pub temperature: f32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+pub struct LightSensorReading {
     pub full_spectrum: u16,
     pub lux: f32,
-    pub timestamp: i64, // filled in by broker
 }
 
 /// [`SensorPlatform`] trait defines the sensor read operation for the platform,
 /// which is configured to hold a vec of dynamic [`Sensor`] objects to
 /// allow support for different sensor types
 pub trait SensorPlatform {
-    fn sensor_read(&self, buff: &mut [u8]) -> Result<(), PlatformSensorError>;
+    fn sensor_read(&self, buff: &mut [u8]) -> Result<SensorReading, PlatformSensorError>;
 }
 
 /// [`Sensor`] trait defines the base sensor read operation, to allow support for
@@ -38,6 +62,11 @@ pub trait SensorPlatform {
 /// device-specific data read ops
 pub trait Sensor {
     fn read(&mut self, buffer: &mut [u8], index: usize) -> Result<usize, PlatformSensorError>;
+    /// some sensors may require dynamic configuration
+    fn dynamic_config(&mut self) -> Result<(), PlatformSensorError> {
+        // noop for default def
+        Ok(())
+    }
 }
 
 /// allows device-specific impls of moisture-specific sensor functionality
@@ -72,6 +101,7 @@ pub enum LightSensorError {
     I2cError(I2cError),
     SetupError,
     SensorError,
+    SignalOverflow,
 }
 
 impl From<I2cError> for LightSensorError {

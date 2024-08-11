@@ -85,7 +85,7 @@ where
 
             ..OperationalDataset::default()
         };
-        log::info!("dataset : {:?}", dataset);
+        log::debug!("Programmed child device with dataset : {:?}", dataset);
 
         self.openthread.set_active_dataset(dataset).unwrap();
         self.openthread.set_child_timeout(60).unwrap();
@@ -97,6 +97,8 @@ where
         let mut data;
         let mut eui: [u8; 6] = [0u8; 6];
 
+        let mut sensor_error_count = 0;
+
         let mut observer_addr: Option<(no_std_net::Ipv6Addr, u16)> = None;
         // This block is needed to constrain how long the immutable borrow of openthread,
         // which happens when the socket object is created, exists
@@ -106,7 +108,7 @@ where
             socket.bind(BOUND_PORT).unwrap();
 
             // make this big
-            let mut send_data_buf: [u8; 56] = [0u8; 56];
+            let mut send_data_buf: [u8; 127] = [0u8; 127];
             loop {
                 self.openthread.process();
                 self.openthread.run_tasklets();
@@ -123,26 +125,58 @@ where
                         res
                     });
 
-                    if read_sensor && self.sensor_read(&mut send_data_buf).is_ok() {
-                        let role = self.openthread.get_device_role();
-                        log::info!("Role: {:?}", role);
-
-                        if let Err(e) = socket.send(observer, port, &send_data_buf) {
-                            // TODO depending on the error, need to set handshake IPv6 to None
-                            // until observer can reestablish conn; this will prevent the
-                            // node from sending data until success is better guaranteed
-                            log::info!(
-                                "Error sending, first print all ips??? then reset due to {:?}",
-                                e
-                            );
-                            socket.close().ok();
-                            break;
-                        } else {
-                            data = [colors::MISTY_ROSE];
-                            self.led
-                                .write(brightness(gamma(data.iter().cloned()), 100))
-                                .ok();
-                        }
+                    if read_sensor {
+                        match self.sensor_read(&mut send_data_buf) {
+                            Ok(r) => {
+                                if let Ok(sensor_data) = serde_json::to_vec(&r) {
+                                    let len = sensor_data.len();
+                                    if let Err(e) =
+                                        socket.send(observer, port, &sensor_data[0..len])
+                                    {
+                                        // TODO depending on the error, need to set handshake IPv6 to None
+                                        // until observer can reestablish conn; this will prevent the
+                                        // node from sending data until success is better guaranteed
+                                        log::error!("Error sending, resetting due to {e:?}");
+                                        socket.close().ok();
+                                        break;
+                                    } else {
+                                        data = [colors::MISTY_ROSE];
+                                        self.led
+                                            .write(brightness(gamma(data.iter().cloned()), 100))
+                                            .ok();
+                                    }
+                                } else {
+                                    log::error!("Unable to serialize sensor data");
+                                }
+                            }
+                            Err(PlatformSensorError::LightSensorError(
+                                pmindp_sensor::LightSensorError::SignalOverflow,
+                            )) => {
+                                // Attempt to dynamically adjust the gain on the
+                                // light sensor to adjust to changing light conditions
+                                // need to determine sensical consts, just picking arbitrary ones for now
+                                if sensor_error_count == 5 {
+                                    log::info!("Adjusting light sensor");
+                                    if let Ok(()) = self.adjust_light_sensor().map_err(|e| {
+                                        log::error!("Failed to adjust light sensor {e:?}");
+                                    }) {
+                                        sensor_error_count = 0;
+                                    }
+                                    // TODO determine appropriate constants here, just picking something arbitrary for now
+                                } else if sensor_error_count == 1000 {
+                                    log::error!(
+                                        "Reached max error count for light sensor error, resetting"
+                                    );
+                                    break;
+                                } else {
+                                    sensor_error_count += 1;
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Sensor error, resetting due to {e:?}");
+                                break;
+                            }
+                        };
                     }
                 }
 
@@ -151,7 +185,7 @@ where
                     if let Ok(packet) = Packet::from_bytes(&buffer[..len]) {
                         let request = CoapRequest::from_packet(packet, from);
 
-                        let method = request.get_method().clone();
+                        let method = *request.get_method();
                         let path = request.get_path();
                         // TODO ! Need better solution
                         let port_req = request.message.header.message_id;
@@ -199,8 +233,6 @@ where
                     .write(brightness(gamma(data.iter().cloned()), 50))
                     .unwrap();
             }
-            // Drop the socket
-            drop(socket);
         }
         log::error!("Socket error, most likely node has dropped from the network");
         self.openthread.thread_set_enabled(false).unwrap();
@@ -209,6 +241,21 @@ where
 
     pub fn reset(&mut self) {
         software_reset_cpu();
+    }
+
+    pub fn adjust_light_sensor(&self) -> Result<(), PlatformSensorError> {
+        #[cfg(feature = "tsl2591")]
+        {
+            let res = critical_section::with(|cs| {
+                let mut sensor = self.sensors[pmindp_sensor::LIGHT_IDX_1].borrow_ref_mut(cs);
+                sensor.dynamic_config()
+            });
+            res
+        }
+        #[cfg(not(feature = "tsl2591"))]
+        {
+            Ok(())
+        }
     }
 }
 
@@ -223,21 +270,56 @@ fn print_all_addresses(addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6>) 
 // sensors to write to, since a variable number of sensors could be
 // attached
 impl<'a> SensorPlatform for Esp32Platform<'a> {
-    fn sensor_read(&self, buffer: &mut [u8]) -> Result<(), PlatformSensorError> {
-        // track write indices so read ops can write to the buffer in the correct place
+    fn sensor_read(
+        &self,
+        buffer: &mut [u8],
+    ) -> Result<pmindp_sensor::SensorReading, PlatformSensorError> {
+        let mut d = pmindp_sensor::SensorReading::default();
+
         let mut start = 0;
-        self.sensors.iter().for_each(|s| {
+        self.sensors.iter().enumerate().for_each(|(idx, s)| {
             if let Ok(size) = critical_section::with(|cs| {
                 let mut sensor = s.borrow_ref_mut(cs);
                 let size = sensor.read(buffer, start)?;
                 Ok(size)
             })
             .map_err(|e: PlatformSensorError| {
-                log::error!("Error reading from light sensor {e:?}");
+                log::error!("Error reading from sensor {e:?}");
+                e
             }) {
-                start = start + size;
+                match idx {
+                    pmindp_sensor::SOIL_IDX => {
+                        if let Ok(soil_reading) =
+                            serde_json::from_slice(&buffer[start..start + size]).map_err(|e| {
+                                log::error!("Unable to serialize soil :( {e:}");
+                                PlatformSensorError::Other
+                            })
+                        {
+                            d.soil = soil_reading;
+                        }
+                    }
+                    pmindp_sensor::LIGHT_IDX_1 => {
+                        if let Ok(light_reading) =
+                            serde_json::from_slice(&buffer[start..start + size])
+                        {
+                            d.light = light_reading;
+                        } else {
+                            log::error!("Unable to serialize light :(");
+                        }
+                    }
+                    // pmindp_sensor::HUM_IDX=>{},
+                    // pmindp_sensor::LIGHT_IDX_2 =>{},
+                    // pmindp_sensor::OTHER_IDX=>{},
+                    _ => {
+                        // all other types are currently unsupported
+                    }
+                };
+
+                start += size;
             }
         });
-        Ok(())
+        d.timestamp = 0;
+        log::info!("Sending {:?}", d);
+        Ok(d)
     }
 }

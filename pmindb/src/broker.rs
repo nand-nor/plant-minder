@@ -144,12 +144,7 @@ impl BrokerCoordinator {
                     log::warn!("Node {:?} timed out, closing receiver stream", addr);
                 }
                 NodeEvent::SensorReading(node) => {
-                    log::debug!(
-                        "Reading! from {:?} moisture {:?} temp {:?}",
-                        node.addr,
-                        node.data.moisture,
-                        node.data.temperature
-                    );
+                    log::debug!("Reading! from {:?} data {:?}", node.addr, node.data);
 
                     if let Err(e) = db_clone
                         .send(NodeSensorReading((*node.addr.ip(), node.data)))

@@ -192,7 +192,7 @@ impl PlantMinder {
                     "Waiting".to_string()
                 } else {
                     let last = node.history.len();
-                    match node.history[last - 1].data.moisture {
+                    match node.history[last - 1].data.soil.moisture {
                         750..=1000 => "Good & moist".to_string(),
                         501..=749 => "Ok (for now)".to_string(),
                         401..=500 => "Danger Zone".to_string(),
@@ -363,8 +363,9 @@ pub struct Tui {
 
 impl Tui {
     // TODO toml file, make this configurable
-    const TERM_COL: u16 = 110;
-    const TERM_ROW: u16 = 30;
+    // for now optimize for my LCD screen
+    const TERM_COL: u16 = 125;
+    const TERM_ROW: u16 = 35;
 
     pub fn new() -> Result<Self, std::io::Error> {
         // keep track of prev terminal size before resizing

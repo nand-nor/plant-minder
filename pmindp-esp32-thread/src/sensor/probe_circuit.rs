@@ -79,7 +79,7 @@ impl<'a> MoistureSensor for ProbeCircuit<'a> {
 impl<'a> Sensor for ProbeCircuit<'a> {
     fn read(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, PlatformSensorError> {
         let size = <Self as MoistureSensor>::moisture(self, buffer, start)
-            .map_err(|e| PlatformSensorError::from(e))?;
+            .map_err(PlatformSensorError::from)?;
         Ok(size)
     }
 }

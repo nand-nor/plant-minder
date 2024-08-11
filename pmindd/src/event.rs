@@ -194,10 +194,9 @@ async fn sensor_stream_process(
             }
             NodeEvent::SensorReading(node) => {
                 log::debug!(
-                    "Reading! from {:?} moisture {:?} temp {:?}",
+                    "Node event: sensor reading! from {:?} data {:?}",
                     node.addr,
-                    node.data.moisture,
-                    node.data.temperature
+                    node.data
                 );
 
                 if let Err(e) = sender_clone.send(node) {

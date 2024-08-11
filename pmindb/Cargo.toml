@@ -17,3 +17,4 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 pmindp-sensor = {  path="../pmindp-sensor", features=["std"]}
 tokio-stream = "0.1.15"
 chrono = {version="0.4.38"}
+serde_json = {version = "1.0"}
