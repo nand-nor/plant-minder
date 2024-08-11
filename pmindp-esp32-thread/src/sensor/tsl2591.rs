@@ -21,9 +21,8 @@ impl From<Tsl2591Error> for LightSensorError {
     fn from(e: Tsl2591Error) -> Self {
         match e {
             Tsl2591Error::I2cError(i) => LightSensorError::I2cError(i),
-            Tsl2591Error::SignalOverflow | Tsl2591Error::SensorError => {
-                LightSensorError::SensorError
-            }
+            Tsl2591Error::SensorError => LightSensorError::SensorError,
+            Tsl2591Error::SignalOverflow => LightSensorError::SignalOverflow,
             _ => LightSensorError::SetupError,
         }
     }
@@ -35,7 +34,7 @@ impl From<I2cError> for Tsl2591Error {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub enum Gain {
     Low = 0,
     #[default]
@@ -58,13 +57,13 @@ pub enum Mode {
 #[derive(Default, Clone)]
 #[repr(u8)]
 pub enum IntegrationTime {
-    IntTime100Ms = 0x0,
-    IntTime200Ms = 0x1,
+    IntTime100 = 0x0,
+    IntTime200 = 0x1,
     #[default]
-    IntTime300Ms = 0x2,
-    IntTime400Ms = 0x3,
-    IntTime500Ms = 0x4,
-    IntTime600Ms = 0x5,
+    IntTime300 = 0x2,
+    IntTime400 = 0x3,
+    IntTime500 = 0x4,
+    IntTime600 = 0x5,
 }
 
 // from https://github.com/adafruit/Adafruit_Library/blob/master/Adafruit_TSL2591.h
@@ -225,10 +224,12 @@ impl<I2C: I2c> TSL2591<I2C> {
     ) -> Result<(), Tsl2591Error> {
         //   self.enable()?;
         if let Some(gain) = gain {
-            self.set_gain(gain)?;
+            self.set_gain(gain.clone())?;
+            self.gain = gain;
         }
         if let Some(int_time) = int_time {
-            self.set_timing(int_time)?;
+            self.set_timing(int_time.clone())?;
+            self.int_time = int_time;
         }
         //    self.disable()?;
         Ok(())
@@ -325,7 +326,7 @@ impl<I2C: I2c> TSL2591<I2C> {
                 if full < infra {
                     return Err(Tsl2591Error::SignalOverflow);
                 }
-                Ok((full - infra))
+                Ok(full - infra)
             }
             Mode::Infrared => Ok(infra),
             Mode::FullSpectrum => Ok(full),
@@ -372,12 +373,12 @@ impl<I2C: I2c> TSL2591<I2C> {
 
     fn get_int_time_float(&self) -> f32 {
         match self.int_time {
-            IntegrationTime::IntTime100Ms => Self::IT100MS,
-            IntegrationTime::IntTime200Ms => Self::IT200MS,
-            IntegrationTime::IntTime300Ms => Self::IT300MS,
-            IntegrationTime::IntTime400Ms => Self::IT400MS,
-            IntegrationTime::IntTime500Ms => Self::IT500MS,
-            IntegrationTime::IntTime600Ms => Self::IT600MS,
+            IntegrationTime::IntTime100 => Self::IT100MS,
+            IntegrationTime::IntTime200 => Self::IT200MS,
+            IntegrationTime::IntTime300 => Self::IT300MS,
+            IntegrationTime::IntTime400 => Self::IT400MS,
+            IntegrationTime::IntTime500 => Self::IT500MS,
+            IntegrationTime::IntTime600 => Self::IT600MS,
         }
     }
 
@@ -388,6 +389,31 @@ impl<I2C: I2c> TSL2591<I2C> {
             Gain::High => Self::GAIN_HIGH,
             Gain::Max => Self::GAIN_MAX,
         }
+    }
+
+    pub fn adjust_for_current_light(&mut self) -> Result<(), Tsl2591Error> {
+        match self.gain {
+            Gain::Low => self.adjust_for_mid_light(),
+            Gain::Medium => self.adjust_for_low_light(),
+            Gain::High => self.adjust_for_ultra_low_light(),
+            Gain::Max => self.adjust_for_bright_light(),
+        }
+    }
+
+    pub fn adjust_for_bright_light(&mut self) -> Result<(), Tsl2591Error> {
+        self.configure(Some(Gain::Low), Some(IntegrationTime::IntTime100))
+    }
+
+    pub fn adjust_for_mid_light(&mut self) -> Result<(), Tsl2591Error> {
+        self.configure(Some(Gain::Medium), Some(IntegrationTime::IntTime300))
+    }
+
+    pub fn adjust_for_low_light(&mut self) -> Result<(), Tsl2591Error> {
+        self.configure(Some(Gain::High), Some(IntegrationTime::IntTime500))
+    }
+
+    pub fn adjust_for_ultra_low_light(&mut self) -> Result<(), Tsl2591Error> {
+        self.configure(Some(Gain::Max), Some(IntegrationTime::IntTime600))
     }
 }
 
@@ -433,8 +459,10 @@ where
             .get_luminosity(Mode::FullSpectrum)
             .map_err(LightSensorError::from)?;
         log::debug!("Full spectrum luminosity {:?}", full_spectrum);
+
         let lux = self.get_lux().map_err(LightSensorError::from)?;
         log::debug!("lux {:?}", lux);
+
         let reading: pmindp_sensor::LightSensorReading =
             pmindp_sensor::LightSensorReading { lux, full_spectrum };
 
@@ -447,5 +475,15 @@ where
         buffer[start..start + len].copy_from_slice(&reading);
 
         Ok(len)
+    }
+
+    fn dynamic_config(&mut self) -> Result<(), PlatformSensorError> {
+        log::info!(
+            "Dynamic config of light sensor, current gain is {:?}",
+            self.gain
+        );
+        self.adjust_for_current_light()
+            .map_err(LightSensorError::from)?;
+        Ok(())
     }
 }

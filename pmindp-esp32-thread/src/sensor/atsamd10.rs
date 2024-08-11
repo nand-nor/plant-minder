@@ -1,10 +1,9 @@
+use core::result::Result;
+use core::result::Result::Ok;
 /// [Seesaw soil sensor](https://www.adafruit.com/product/4026)
-
 use embedded_hal::i2c::I2c;
 use esp_hal::delay::Delay;
 use pmindp_sensor::{MoistureSensor, PlatformSensorError, Sensor, SoilSensorError, TempSensor};
-use core::result::Result;
-use core::result::Result::Ok;
 
 /// Seesaw I2C Soil Sensor
 pub struct ATSAMD10<I2C: I2c> {

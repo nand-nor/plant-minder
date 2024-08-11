@@ -48,7 +48,6 @@ fn main() -> ! {
     let mut ieee802154 = Ieee802154::new(peripherals.IEEE802154, &mut peripherals.RADIO_CLK);
     let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
-
     #[cfg(not(feature = "esp32h2"))]
     let i2c = I2C::new(
         peripherals.I2C0,
@@ -64,7 +63,7 @@ fn main() -> ! {
         io.pins.gpio3,
         400.kHz(),
         &clocks,
-    );    
+    );
 
     let i2c_ref_cell = RefCell::new(i2c);
     let i2c_ref_cell: &'static _ = Box::leak(Box::new(i2c_ref_cell));

@@ -36,9 +36,7 @@ pub use crate::{
 };
 
 #[cfg(not(feature = "esp32h2"))]
-pub use crate::{
-    sensor::ProbeCircuit,
-};
+pub use crate::sensor::ProbeCircuit;
 
 use core::{cell::RefCell, ptr::addr_of_mut};
 use critical_section::Mutex;
@@ -72,7 +70,9 @@ pub fn init_heap() {
     unsafe { ALLOC.init(addr_of_mut!(HEAP) as *mut u8, SIZE) }
 }
 
-static SENSOR_TIMER: Mutex<RefCell<Option<Timer<Timer0<TIMG0>, esp_hal::Blocking>>>> =
+type SensorTimer = Mutex<RefCell<Option<Timer<Timer0<TIMG0>, esp_hal::Blocking>>>>;
+
+static SENSOR_TIMER: SensorTimer =
     Mutex::new(RefCell::new(None));
 
 const DEFAULT_MIN_INTERVAL: u64 = 5000;
@@ -81,6 +81,8 @@ static SENSOR_TIMER_INTERVAL: Mutex<RefCell<u64>> = Mutex::new(RefCell::new(DEFA
 
 static SENSOR_TIMER_FIRED: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
 
+// TODO builder?
+#[allow(clippy::too_many_arguments)]
 pub fn init<'a>(
     ieee802154: &'a mut Ieee802154,
     clocks: &Clocks,

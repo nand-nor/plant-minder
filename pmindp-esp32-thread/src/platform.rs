@@ -130,7 +130,9 @@ where
                             Ok(r) => {
                                 if let Ok(sensor_data) = serde_json::to_vec(&r) {
                                     let len = sensor_data.len();
-                                    if let Err(e) = socket.send(observer, port, &sensor_data[0..len]) {
+                                    if let Err(e) =
+                                        socket.send(observer, port, &sensor_data[0..len])
+                                    {
                                         // TODO depending on the error, need to set handshake IPv6 to None
                                         // until observer can reestablish conn; this will prevent the
                                         // node from sending data until success is better guaranteed
@@ -147,13 +149,24 @@ where
                                     log::error!("Unable to serialize sensor data");
                                 }
                             }
-                            Err(PlatformSensorError::LightSensorError(_e)) => {
-                                // TODO instead of breaking here, we should dynamically adjust the gain on the 
+                            Err(PlatformSensorError::LightSensorError(
+                                pmindp_sensor::LightSensorError::SignalOverflow,
+                            )) => {
+                                // Attempt to dynamically adjust the gain on the
                                 // light sensor to adjust to changing light conditions
-                                // so need to match on LightSensorError::SensorError which is what is returned
-                                // when there is overflow on read
-                                if sensor_error_count == 1000 {
-                                    log::error!("Reached max error count for light sensor error, resetting");
+                                // need to determine sensical consts, just picking arbitrary ones for now
+                                if sensor_error_count == 5 {
+                                    log::info!("Adjusting light sensor");
+                                    if let Ok(()) = self.adjust_light_sensor().map_err(|e| {
+                                        log::error!("Failed to adjust light sensor {e:?}");
+                                    }) {
+                                        sensor_error_count = 0;
+                                    }
+                                    // TODO determine appropriate constants here, just picking something arbitrary for now
+                                } else if sensor_error_count == 1000 {
+                                    log::error!(
+                                        "Reached max error count for light sensor error, resetting"
+                                    );
                                     break;
                                 } else {
                                     sensor_error_count += 1;
@@ -172,7 +185,7 @@ where
                     if let Ok(packet) = Packet::from_bytes(&buffer[..len]) {
                         let request = CoapRequest::from_packet(packet, from);
 
-                        let method = request.get_method().clone();
+                        let method = *request.get_method();
                         let path = request.get_path();
                         // TODO ! Need better solution
                         let port_req = request.message.header.message_id;
@@ -220,8 +233,6 @@ where
                     .write(brightness(gamma(data.iter().cloned()), 50))
                     .unwrap();
             }
-            // Drop the socket
-            drop(socket);
         }
         log::error!("Socket error, most likely node has dropped from the network");
         self.openthread.thread_set_enabled(false).unwrap();
@@ -230,6 +241,21 @@ where
 
     pub fn reset(&mut self) {
         software_reset_cpu();
+    }
+
+    pub fn adjust_light_sensor(&self) -> Result<(), PlatformSensorError> {
+        #[cfg(feature = "tsl2591")]
+        {
+            let res = critical_section::with(|cs| {
+                let mut sensor = self.sensors[pmindp_sensor::LIGHT_IDX_1].borrow_ref_mut(cs);
+                sensor.dynamic_config()
+            });
+            res
+        }
+        #[cfg(not(feature = "tsl2591"))]
+        {
+            Ok(())
+        }
     }
 }
 
@@ -289,10 +315,11 @@ impl<'a> SensorPlatform for Esp32Platform<'a> {
                     }
                 };
 
-                start = start + size;
+                start += size;
             }
         });
         d.timestamp = 0;
+        log::info!("Sending {:?}", d);
         Ok(d)
     }
 }

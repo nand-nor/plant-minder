@@ -62,6 +62,11 @@ pub trait SensorPlatform {
 /// device-specific data read ops
 pub trait Sensor {
     fn read(&mut self, buffer: &mut [u8], index: usize) -> Result<usize, PlatformSensorError>;
+    /// some sensors may require dynamic configuration
+    fn dynamic_config(&mut self) -> Result<(), PlatformSensorError> {
+        // noop for default def
+        Ok(())
+    }
 }
 
 /// allows device-specific impls of moisture-specific sensor functionality
@@ -96,6 +101,7 @@ pub enum LightSensorError {
     I2cError(I2cError),
     SetupError,
     SensorError,
+    SignalOverflow,
 }
 
 impl From<I2cError> for LightSensorError {
