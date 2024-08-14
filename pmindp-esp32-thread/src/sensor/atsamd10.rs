@@ -1,5 +1,3 @@
-use core::result::Result;
-use core::result::Result::Ok;
 /// [Seesaw soil sensor](https://www.adafruit.com/product/4026)
 use embedded_hal::i2c::I2c;
 use esp_hal::delay::Delay;
