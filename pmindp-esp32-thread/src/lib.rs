@@ -32,7 +32,7 @@ mod sensor;
 
 pub use crate::{
     platform::Esp32Platform,
-    sensor::{ATSAMD10, TSL2591},
+    sensor::{ATSAMD10, BME680, TSL2591},
 };
 
 #[cfg(not(feature = "esp32h2"))]
@@ -70,10 +70,11 @@ pub fn init_heap() {
     unsafe { ALLOC.init(addr_of_mut!(HEAP) as *mut u8, SIZE) }
 }
 
+pub type SensorVec = Vec<Option<Mutex<RefCell<Box<dyn Sensor>>>>>;
+
 type SensorTimer = Mutex<RefCell<Option<Timer<Timer0<TIMG0>, esp_hal::Blocking>>>>;
 
-static SENSOR_TIMER: SensorTimer =
-    Mutex::new(RefCell::new(None));
+static SENSOR_TIMER: SensorTimer = Mutex::new(RefCell::new(None));
 
 const DEFAULT_MIN_INTERVAL: u64 = 5000;
 
@@ -91,7 +92,7 @@ pub fn init<'a>(
     rmt: impl Peripheral<P = RMT> + 'a,
     led_pin: GpioPin<8>,
     rng: RNG,
-    sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>>,
+    sensors: SensorVec,
 ) -> Esp32Platform<'a>
 where
     Esp32Platform<'a>: SensorPlatform,

@@ -15,13 +15,15 @@
 
 use serde::{Deserialize, Serialize};
 
+/// System must have at a bare minimum soil sensor, all other
+/// sensors are optional
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
 pub struct SensorReading {
     pub soil: SoilSensorReading,
-    #[serde(default)]
-    /// If no light sensor is configured,
-    /// then these should be populated with 0s
-    pub light: LightSensorReading,
+    //  #[serde(default)]
+    pub light: Option<LightSensorReading>,
+    //  #[serde(default)]
+    pub gas_humidity: Option<GasSensorReading>,
     #[serde(default)]
     pub timestamp: i64,
 }
@@ -44,6 +46,14 @@ pub struct SoilSensorReading {
 pub struct LightSensorReading {
     pub full_spectrum: u16,
     pub lux: f32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+pub struct GasSensorReading {
+    pub temperature: f32,
+    pub pressure: f32,
+    pub humidity: f32,
+    pub gas_resistance: u32,
 }
 
 /// [`SensorPlatform`] trait defines the sensor read operation for the platform,
@@ -89,14 +99,14 @@ pub trait LightLuxSensor {
     fn lux(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, LightSensorError>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum I2cError {
     I2cReadError,
     I2cWriteError,
     I2cWriteReadError,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum LightSensorError {
     I2cError(I2cError),
     SetupError,
@@ -110,16 +120,17 @@ impl From<I2cError> for LightSensorError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum SoilSensorError {
     I2cReadError,
     I2cWriteError,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum PlatformSensorError {
     SoilSensorError(SoilSensorError),
     LightSensorError(LightSensorError),
+    SensorSetup,
     Other,
 }
 

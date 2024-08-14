@@ -1,23 +1,16 @@
-use core::{cell::RefCell, pin::pin};
-
+use core::pin::pin;
 use esp_hal_smartled::SmartLedsAdapter;
-
 use esp_hal::{reset::software_reset_cpu, rmt::Channel, Blocking};
-
-use critical_section::Mutex;
 use esp_ieee802154::Config;
 use esp_openthread::{
     NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadTimestamp,
 };
 
 use coap_lite::{CoapRequest, Packet};
-
 use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
+use pmindp_sensor::{PlatformSensorError, SensorPlatform};
 
-use alloc::{boxed::Box, vec::Vec};
-use pmindp_sensor::{PlatformSensorError, Sensor, SensorPlatform};
-
-use crate::SENSOR_TIMER_FIRED;
+use crate::{SensorVec, SENSOR_TIMER_FIRED};
 
 // TODO put this in pmindp-sensor so other crates in
 // workspace can access this
@@ -28,7 +21,7 @@ pub const BOUND_PORT: u16 = 1212;
 pub struct Esp32Platform<'a> {
     led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
     openthread: OpenThread<'a>,
-    sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>>,
+    sensors: SensorVec,
 }
 
 pub enum Esp32PlatformError {
@@ -45,7 +38,7 @@ where
     pub fn new(
         led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
         openthread: OpenThread<'a>,
-        sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>>,
+        sensors: SensorVec,
     ) -> Self {
         Self {
             led,
@@ -246,11 +239,16 @@ where
     pub fn adjust_light_sensor(&self) -> Result<(), PlatformSensorError> {
         #[cfg(feature = "tsl2591")]
         {
-            let res = critical_section::with(|cs| {
-                let mut sensor = self.sensors[pmindp_sensor::LIGHT_IDX_1].borrow_ref_mut(cs);
-                sensor.dynamic_config()
-            });
-            res
+            if let Some(sensor) = &self.sensors[pmindp_sensor::LIGHT_IDX_1] {
+                let res = critical_section::with(|cs| {
+                    let mut sensor = sensor.borrow_ref_mut(cs);
+                    sensor.dynamic_config()
+                });
+                log::info!("Adjusted light sensor; res: {:?}", res);
+                res
+            } else {
+                Ok(())
+            }
         }
         #[cfg(not(feature = "tsl2591"))]
         {
@@ -278,44 +276,53 @@ impl<'a> SensorPlatform for Esp32Platform<'a> {
 
         let mut start = 0;
         self.sensors.iter().enumerate().for_each(|(idx, s)| {
-            if let Ok(size) = critical_section::with(|cs| {
-                let mut sensor = s.borrow_ref_mut(cs);
-                let size = sensor.read(buffer, start)?;
-                Ok(size)
-            })
-            .map_err(|e: PlatformSensorError| {
-                log::error!("Error reading from sensor {e:?}");
-                e
-            }) {
-                match idx {
-                    pmindp_sensor::SOIL_IDX => {
-                        if let Ok(soil_reading) =
-                            serde_json::from_slice(&buffer[start..start + size]).map_err(|e| {
-                                log::error!("Unable to serialize soil :( {e:}");
-                                PlatformSensorError::Other
-                            })
-                        {
-                            d.soil = soil_reading;
+            if let Some(s) = s {
+                if let Ok(size) = critical_section::with(|cs| {
+                    let mut sensor = s.borrow_ref_mut(cs);
+                    let size = sensor.read(buffer, start)?;
+                    Ok(size)
+                })
+                .map_err(|e: PlatformSensorError| {
+                    log::error!("Error reading from sensor {e:?}");
+                }) {
+                    match idx {
+                        pmindp_sensor::SOIL_IDX => {
+                            if let Ok(soil_reading) =
+                                serde_json::from_slice(&buffer[start..start + size]).map_err(|e| {
+                                    log::error!("Unable to serialize soil reading {e:}");
+                                    PlatformSensorError::Other
+                                })
+                            {
+                                d.soil = soil_reading;
+                            }
                         }
-                    }
-                    pmindp_sensor::LIGHT_IDX_1 => {
-                        if let Ok(light_reading) =
-                            serde_json::from_slice(&buffer[start..start + size])
-                        {
-                            d.light = light_reading;
-                        } else {
-                            log::error!("Unable to serialize light :(");
+                        pmindp_sensor::LIGHT_IDX_1 => {
+                            if let Ok(light_reading) =
+                                serde_json::from_slice(&buffer[start..start + size])
+                            {
+                                d.light = Some(light_reading);
+                            } else {
+                                log::error!("Unable to serialize light reading");
+                            }
                         }
-                    }
-                    // pmindp_sensor::HUM_IDX=>{},
-                    // pmindp_sensor::LIGHT_IDX_2 =>{},
-                    // pmindp_sensor::OTHER_IDX=>{},
-                    _ => {
-                        // all other types are currently unsupported
-                    }
-                };
+                        pmindp_sensor::HUM_IDX => {
+                            if let Ok(hum_reading) =
+                                serde_json::from_slice(&buffer[start..start + size])
+                            {
+                                d.gas_humidity = Some(hum_reading);
+                            } else {
+                                log::error!("Unable to serialize humidity/gas reading");
+                            }
+                        }
+                        // pmindp_sensor::LIGHT_IDX_2 =>{},
+                        // pmindp_sensor::OTHER_IDX=>{},
+                        _ => {
+                            // all other types are currently unsupported
+                        }
+                    };
 
-                start += size;
+                    start += size;
+                }
             }
         });
         d.timestamp = 0;

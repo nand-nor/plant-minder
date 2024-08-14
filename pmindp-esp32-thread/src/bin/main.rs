@@ -16,17 +16,13 @@ use esp_hal::{
 
 extern crate alloc;
 
-//#[cfg(feature = "atsamd10")]
-//use esp_hal::i2c::I2C;
-use alloc::{boxed::Box, vec::Vec};
-
-use pmindp_sensor::Sensor;
+use alloc::{boxed::Box};
 
 #[cfg(feature = "probe-circuit")]
 use esp_hal::gpio::{Level, Output};
 
 use esp_println::println;
-use pmindp_esp32_thread::init_heap;
+use pmindp_esp32_thread::{SensorVec, init_heap};
 
 use esp_ieee802154::Ieee802154;
 
@@ -68,8 +64,8 @@ fn main() -> ! {
     let i2c_ref_cell = RefCell::new(i2c);
     let i2c_ref_cell: &'static _ = Box::leak(Box::new(i2c_ref_cell));
 
-    let mut sensors: Vec<Mutex<RefCell<Box<dyn Sensor>>>> =
-        Vec::with_capacity(pmindp_sensor::MAX_SENSORS);
+    let mut sensors: SensorVec =
+        (0..pmindp_sensor::MAX_SENSORS).map(|_| None).collect();
 
     // Require at least a moisture sensor
     cfg_if::cfg_if! {
@@ -82,7 +78,7 @@ fn main() -> ! {
                 delay: Delay::new(&clocks)
             };
 
-            sensors.insert(pmindp_sensor::SOIL_IDX, Mutex::new(RefCell::new(Box::new(soil_sensor))));
+            sensors.insert(pmindp_sensor::SOIL_IDX, Some(Mutex::new(RefCell::new(Box::new(soil_sensor)))));
 
         } else if #[cfg(feature="probe-circuit")] {
             let soil_sensor = pmindp_esp32_thread::ProbeCircuit::new(
@@ -94,14 +90,14 @@ fn main() -> ! {
                 peripherals.ADC1,
                 Delay::new(&clocks)
             );
-            sensors.insert(pmindp_sensor::SOIL_IDX, Mutex::new(RefCell::new(Box::new(soil_sensor))));
+            sensors.insert(pmindp_sensor::SOIL_IDX, Some(Mutex::new(RefCell::new(Box::new(soil_sensor)))));
         } else {
             log::error!("No sensor target specified!");
             panic!("No sensors specified")
         }
     }
 
-    // optionally enable light sensor as well
+    // enable optional light sensor configuration
     cfg_if::cfg_if! {
         if #[cfg(feature="tsl2591")] {
             let light_sensor = pmindp_esp32_thread::TSL2591::new(
@@ -109,7 +105,19 @@ fn main() -> ! {
                 0x29,
                 Delay::new(&clocks)
             ).unwrap();
-            sensors.insert(pmindp_sensor::LIGHT_IDX_1, Mutex::new(RefCell::new(Box::new(light_sensor))));
+            sensors.insert(pmindp_sensor::LIGHT_IDX_1, Some(Mutex::new(RefCell::new(Box::new(light_sensor)))));
+        }
+    }
+
+    // enable humidity/gas sensor configuration
+    cfg_if::cfg_if! {
+        if #[cfg(feature="bme680")] {
+            let gas_sensor = pmindp_esp32_thread::BME680::new(
+                i2c::RefCellDevice::new(i2c_ref_cell),
+                //0x29,
+                Delay::new(&clocks)
+            ).unwrap();
+            sensors.insert(pmindp_sensor::HUM_IDX, Some(Mutex::new(RefCell::new(Box::new(gas_sensor)))));
         }
     }
 

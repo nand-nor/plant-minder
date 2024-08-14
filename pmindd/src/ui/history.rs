@@ -298,18 +298,18 @@ impl Widget for NodeHistory<'_> {
                 }
 
                 if max_l == 0.0 {
-                    max_l = h.data.light.full_spectrum as f64;
+                    max_l = h.data.light.unwrap_or_default().full_spectrum as f64;
                 }
 
-                if (h.data.light.full_spectrum as f64) < max_l {
-                    max_l = h.data.light.full_spectrum as f64;
+                if (h.data.light.unwrap_or_default().full_spectrum as f64) < max_l {
+                    max_l = h.data.light.unwrap_or_default().full_spectrum as f64;
                 }
 
                 let timestamp = h.data.timestamp as f64;
 
                 let reading = match self.view {
-                    HistoryView::Lux => h.data.light.lux as f64,
-                    HistoryView::Lumens => h.data.light.full_spectrum as f64,
+                    HistoryView::Lux => h.data.light.unwrap_or_default().lux as f64,
+                    HistoryView::Lumens => h.data.light.unwrap_or_default().full_spectrum as f64,
                     HistoryView::Temp => h.data.soil.temperature as f64,
                     HistoryView::Moisture => h.data.soil.moisture as f64,
                 };

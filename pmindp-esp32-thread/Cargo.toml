@@ -24,13 +24,14 @@ esp-openthread = { git = "https://github.com/nand-nor/esp-openthread.git", branc
 coap-lite = {version="0.12.0", features=["udp"],default-features=false}
 pmindp-sensor = {  path="../pmindp-sensor"}
 serde_json = {version = "1.0", default-features=false, features = ["alloc"] } 
-
+bme680 = {version = "0.7.0",  git = "https://github.com/nand-nor/bme680.git", branch="bump-embedded-hal-dep"}
 
 [features]
-default = [] #"esp32c6","atsamd10"]
+default = []
 esp32c6 = [ "esp-hal/esp32c6", "esp-ieee802154/esp32c6", "esp-openthread/esp32c6", "esp-backtrace/esp32c6", "esp-println/esp32c6", "esp-hal-smartled/esp32c6" ]
 esp32h2 = [ "esp-hal/esp32h2", "esp-ieee802154/esp32h2", "esp-openthread/esp32h2", "esp-backtrace/esp32h2", "esp-println/esp32h2", "esp-hal-smartled/esp32h2" ]
 probe-circuit = []
 atsamd10 = []
 st0160 = []
 tsl2591 = []
+bme680 = []

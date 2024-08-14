@@ -8,7 +8,6 @@ use pmindd::{
 use tracing_appender::rolling;
 use tracing_subscriber::FmtSubscriber;
 
-use log;
 use tracing_log::LogTracer;
 
 #[actix::main]
