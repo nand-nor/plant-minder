@@ -17,12 +17,6 @@ type AdcCal = esp_hal::analog::adc::AdcCalCurve<ADC1>;
 
 //impl SensorReading for ProbeCircuitSensorReading {}
 
-//#[derive(Debug, Clone, Copy)]
-//pub struct ProbeCircuitSensorReading {
-//    pub moisture: u16,
-//    pub temperature: f32,
-//}
-
 pub struct ProbeCircuit<'a> {
     // digital pin
     pwr_pin: Output<'a, GpioPin<6>>,

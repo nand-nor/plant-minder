@@ -79,7 +79,7 @@ impl NodeEventHandler {
                                     log::error!("Deserde error {e:} len {:?}", len);
                                 }) {
                                     log::trace!("got data from node {:?}", data);
-                                    data.timestamp = Utc::now().timestamp();
+                                    data.ts = Utc::now().timestamp();
 
                                     // TODO error handling
                                     _sender.send(NodeEvent::SensorReading(NodeSensorReading {

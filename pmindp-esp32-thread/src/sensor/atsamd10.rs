@@ -79,7 +79,7 @@ impl<I2C> TempSensor for ATSAMD10<I2C>
 where
     I2C: I2c,
 {
-    fn temperature(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError> {
+    fn temp(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError> {
         let reading = self.temperature().map_err(SoilSensorError::from)?;
         let size = core::mem::size_of::<f32>();
         buffer[start..start + size].copy_from_slice(&reading.to_le_bytes());
@@ -92,14 +92,14 @@ where
     I2C: I2c,
 {
     fn read(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, PlatformSensorError> {
-        let temperature = self.temperature().map_err(SoilSensorError::from)?;
-        log::debug!("temperature {:?}", temperature);
+        let temp = self.temperature().map_err(SoilSensorError::from)?;
+        log::debug!("temp {:?}", temp);
         let moisture = self.moisture().map_err(SoilSensorError::from)?;
         log::debug!("moisture {:?}", moisture);
 
-        let reading: pmindp_sensor::SoilSensorReading = pmindp_sensor::SoilSensorReading {
+        let reading: pmindp_sensor::Soil = pmindp_sensor::Soil {
             moisture,
-            temperature,
+            temp,
         };
 
         let reading = serde_json::to_vec(&reading).map_err(|e| {

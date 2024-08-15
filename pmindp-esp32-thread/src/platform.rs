@@ -264,7 +264,7 @@ impl<'a> SensorPlatform for Esp32Platform<'a> {
                             if let Ok(hum_reading) =
                                 serde_json::from_slice(&buffer[start..start + size])
                             {
-                                d.gas_humidity = Some(hum_reading);
+                                d.gas = Some(hum_reading);
                             } else {
                                 log::error!("Unable to serialize humidity/gas reading");
                             }
@@ -280,7 +280,7 @@ impl<'a> SensorPlatform for Esp32Platform<'a> {
                 }
             }
         });
-        d.timestamp = 0;
+        d.ts = 0;
         log::info!("Sending {:?}", d);
         Ok(d)
     }
