@@ -90,8 +90,6 @@ where
         let mut data;
         let mut eui: [u8; 6] = [0u8; 6];
 
-        let mut sensor_error_count = 0;
-
         let mut observer_addr: Option<(no_std_net::Ipv6Addr, u16)> = None;
         // This block is needed to constrain how long the immutable borrow of openthread,
         // which happens when the socket object is created, exists
@@ -140,29 +138,6 @@ where
                                     }
                                 } else {
                                     log::error!("Unable to serialize sensor data");
-                                }
-                            }
-                            Err(PlatformSensorError::LightSensorError(
-                                pmindp_sensor::LightSensorError::SignalOverflow,
-                            )) => {
-                                // Attempt to dynamically adjust the gain on the
-                                // light sensor to adjust to changing light conditions
-                                // need to determine sensical consts, just picking arbitrary ones for now
-                                if sensor_error_count == 5 {
-                                    log::info!("Adjusting light sensor");
-                                    if let Ok(()) = self.adjust_light_sensor().map_err(|e| {
-                                        log::error!("Failed to adjust light sensor {e:?}");
-                                    }) {
-                                        sensor_error_count = 0;
-                                    }
-                                    // TODO determine appropriate constants here, just picking something arbitrary for now
-                                } else if sensor_error_count == 1000 {
-                                    log::error!(
-                                        "Reached max error count for light sensor error, resetting"
-                                    );
-                                    break;
-                                } else {
-                                    sensor_error_count += 1;
                                 }
                             }
                             Err(e) => {
@@ -234,26 +209,6 @@ where
 
     pub fn reset(&mut self) {
         software_reset_cpu();
-    }
-
-    pub fn adjust_light_sensor(&self) -> Result<(), PlatformSensorError> {
-        #[cfg(feature = "tsl2591")]
-        {
-            if let Some(sensor) = &self.sensors[pmindp_sensor::LIGHT_IDX_1] {
-                let res = critical_section::with(|cs| {
-                    let mut sensor = sensor.borrow_ref_mut(cs);
-                    sensor.dynamic_config()
-                });
-                log::info!("Adjusted light sensor; res: {:?}", res);
-                res
-            } else {
-                Ok(())
-            }
-        }
-        #[cfg(not(feature = "tsl2591"))]
-        {
-            Ok(())
-        }
     }
 }
 

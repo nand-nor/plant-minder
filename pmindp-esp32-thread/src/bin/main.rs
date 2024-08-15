@@ -16,7 +16,7 @@ use esp_hal::{
 
 extern crate alloc;
 
-use alloc::{boxed::Box};
+use alloc::boxed::Box;
 
 #[cfg(feature = "probe-circuit")]
 use esp_hal::gpio::{Level, Output};
@@ -114,7 +114,6 @@ fn main() -> ! {
         if #[cfg(feature="bme680")] {
             let gas_sensor = pmindp_esp32_thread::BME680::new(
                 i2c::RefCellDevice::new(i2c_ref_cell),
-                //0x29,
                 Delay::new(&clocks)
             ).unwrap();
             sensors.insert(pmindp_sensor::HUM_IDX, Some(Mutex::new(RefCell::new(Box::new(gas_sensor)))));

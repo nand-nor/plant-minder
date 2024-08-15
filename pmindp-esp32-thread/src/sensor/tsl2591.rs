@@ -163,6 +163,7 @@ pub struct TSL2591<I2C: I2c> {
     int_time: IntegrationTime,
     mode: Mode,
     delay: Delay,
+    fault_count: u32,
 }
 
 impl<I2C: I2c> TSL2591<I2C> {
@@ -200,6 +201,9 @@ impl<I2C: I2c> TSL2591<I2C> {
     const IT500MS: f32 = 500.0;
     const IT600MS: f32 = 600.0;
 
+    // TODO find reasonable value for this
+    const FAULT_THRESHOLD: u32 = 5;
+
     pub fn new(i2c: I2C, address: u8, delay: Delay) -> Result<Self, I2cError> {
         let mut sensor = Self {
             i2c,
@@ -208,6 +212,7 @@ impl<I2C: I2c> TSL2591<I2C> {
             mode: Mode::default(),
             int_time: IntegrationTime::default(),
             gain: Gain::default(),
+            fault_count: 0,
         };
 
         sensor.enable()?;
@@ -324,6 +329,7 @@ impl<I2C: I2c> TSL2591<I2C> {
         match channel {
             Mode::Visible => {
                 if full < infra {
+                    self.fault_count += 1;
                     return Err(Tsl2591Error::SignalOverflow);
                 }
                 Ok(full - infra)
@@ -349,6 +355,7 @@ impl<I2C: I2c> TSL2591<I2C> {
         let full = full_luminosity.bitand(0xffff) as f32;
 
         if (full as u16 == 0xffff) || (infra as u16 == 0xffff) {
+            self.fault_count += 1;
             return Err(Tsl2591Error::SignalOverflow);
         }
 
@@ -363,6 +370,7 @@ impl<I2C: I2c> TSL2591<I2C> {
         let lux = lux1.max(lux2);
         */
         if full < infra || full == 0.0 {
+            self.fault_count += 1;
             return Err(Tsl2591Error::SignalOverflow);
         }
 
@@ -393,11 +401,13 @@ impl<I2C: I2c> TSL2591<I2C> {
 
     pub fn adjust_for_current_light(&mut self) -> Result<(), Tsl2591Error> {
         match self.gain {
-            Gain::Low => self.adjust_for_mid_light(),
-            Gain::Medium => self.adjust_for_low_light(),
-            Gain::High => self.adjust_for_ultra_low_light(),
-            Gain::Max => self.adjust_for_bright_light(),
-        }
+            Gain::Low => self.adjust_for_mid_light()?,
+            Gain::Medium => self.adjust_for_low_light()?,
+            Gain::High => self.adjust_for_ultra_low_light()?,
+            Gain::Max => self.adjust_for_bright_light()?,
+        };
+        self.fault_count = 0;
+        Ok(())
     }
 
     pub fn adjust_for_bright_light(&mut self) -> Result<(), Tsl2591Error> {
@@ -414,6 +424,10 @@ impl<I2C: I2c> TSL2591<I2C> {
 
     pub fn adjust_for_ultra_low_light(&mut self) -> Result<(), Tsl2591Error> {
         self.configure(Some(Gain::Max), Some(IntegrationTime::IntTime600))
+    }
+
+    fn fault_count_threshold(&self) -> bool {
+        self.fault_count >= Self::FAULT_THRESHOLD
     }
 }
 
@@ -455,6 +469,10 @@ where
     I2C: I2c,
 {
     fn read(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, PlatformSensorError> {
+        if self.fault_count_threshold() {
+            log::warn!("Adjusting for consistent light sensor failures before attempting read");
+            self.adjust_for_current_light().map_err(LightSensorError::from)?;
+        }
         let full_spectrum = self
             .get_luminosity(Mode::FullSpectrum)
             .map_err(LightSensorError::from)?;
@@ -475,15 +493,5 @@ where
         buffer[start..start + len].copy_from_slice(&reading);
 
         Ok(len)
-    }
-
-    fn dynamic_config(&mut self) -> Result<(), PlatformSensorError> {
-        log::info!(
-            "Dynamic config of light sensor, current gain is {:?}",
-            self.gain
-        );
-        self.adjust_for_current_light()
-            .map_err(LightSensorError::from)?;
-        Ok(())
     }
 }
