@@ -5,7 +5,7 @@ use bme680::*;
 use embedded_hal::i2c::I2c;
 use esp_hal::delay::Delay;
 
-use pmindp_sensor::{GasSensorReading, PlatformSensorError, Sensor};
+use pmindp_sensor::{Gas, PlatformSensorError, Sensor};
 
 pub struct BME680<I2C: I2c> {
     delay: Delay,
@@ -48,18 +48,18 @@ where
         Ok(Self { delay, sensor })
     }
 
-    fn read_sensor(&mut self) -> Result<GasSensorReading, PlatformSensorError> {
+    fn read_sensor(&mut self) -> Result<Gas, PlatformSensorError> {
         let mut delay = self.delay;
         let (data, _state) = self.sensor.get_sensor_data(&mut delay).map_err(|e| {
             log::error!("Error getting sensor data {e:?}");
             PlatformSensorError::Other
         })?;
 
-        // convert to F
-        let temperature = (data.temperature_celsius() * 1.8) + 32.0;
-        let humidity = data.humidity_percent();
-        let gas_resistance = data.gas_resistance_ohm();
-        let pressure = data.pressure_hpa();
+        // convert to Fs
+        let temp = (data.temperature_celsius() * 1.8) + 32.0;
+        let h = data.humidity_percent();
+        let gas = data.gas_resistance_ohm();
+        let p = data.pressure_hpa();
 
         self.sensor
             .set_sensor_mode(&mut delay, PowerMode::ForcedMode)
@@ -68,11 +68,11 @@ where
                 PlatformSensorError::Other
             })?;
 
-        Ok(GasSensorReading {
-            temperature,
-            pressure,
-            humidity,
-            gas_resistance,
+        Ok(Gas {
+            temp,
+            p,
+            h,
+            gas,
         })
     }
 }
@@ -82,7 +82,7 @@ where
     I2C: I2c,
 {
     fn read(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, PlatformSensorError> {
-        let reading: GasSensorReading = self.read_sensor()?;
+        let reading: Gas = self.read_sensor()?;
         let reading = serde_json::to_vec(&reading).map_err(|e| {
             log::error!("Serde failed {e:}");
             PlatformSensorError::Other

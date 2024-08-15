@@ -290,32 +290,32 @@ impl Widget for NodeHistory<'_> {
             .iter()
             .map(|h| {
                 if min_t == 0.0 {
-                    min_t = h.data.timestamp as f64;
+                    min_t = h.data.ts as f64;
                 }
 
-                if (h.data.timestamp as f64) < min_t {
-                    min_t = h.data.timestamp as f64;
+                if (h.data.ts as f64) < min_t {
+                    min_t = h.data.ts as f64;
                 }
 
                 if max_l == 0.0 {
-                    max_l = h.data.light.unwrap_or_default().full_spectrum as f64;
+                    max_l = h.data.light.unwrap_or_default().fs as f64;
                 }
 
-                if (h.data.light.unwrap_or_default().full_spectrum as f64) < max_l {
-                    max_l = h.data.light.unwrap_or_default().full_spectrum as f64;
+                if (h.data.light.unwrap_or_default().fs as f64) < max_l {
+                    max_l = h.data.light.unwrap_or_default().fs as f64;
                 }
 
-                let timestamp = h.data.timestamp as f64;
+                let ts = h.data.ts as f64;
 
                 let reading = match self.view {
                     HistoryView::Lux => h.data.light.unwrap_or_default().lux as f64,
-                    HistoryView::Lumens => h.data.light.unwrap_or_default().full_spectrum as f64,
-                    HistoryView::Temp => h.data.soil.temperature as f64,
+                    HistoryView::Lumens => h.data.light.unwrap_or_default().fs as f64,
+                    HistoryView::Temp => h.data.soil.temp as f64,
                     HistoryView::Moisture => h.data.soil.moisture as f64,
                 };
                 (
-                    timestamp, // x is time
-                    reading,   // y is the sensor reading
+                    ts,      // x is time
+                    reading, // y is the sensor reading
                 )
             })
             .collect::<Vec<_>>();

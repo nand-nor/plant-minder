@@ -19,13 +19,13 @@ use serde::{Deserialize, Serialize};
 /// sensors are optional
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
 pub struct SensorReading {
-    pub soil: SoilSensorReading,
+    pub soil: Soil,
     //  #[serde(default)]
-    pub light: Option<LightSensorReading>,
+    pub light: Option<Light>,
     //  #[serde(default)]
-    pub gas_humidity: Option<GasSensorReading>,
+    pub gas: Option<Gas>,
     #[serde(default)]
-    pub timestamp: i64,
+    pub ts: i64,
 }
 
 pub const MAX_SENSORS: usize = 5;
@@ -36,24 +36,30 @@ pub const LIGHT_IDX_2: usize = 3;
 pub const OTHER_IDX: usize = 4;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
-pub struct SoilSensorReading {
+pub struct Soil {
     pub moisture: u16,
     #[serde(default)]
-    pub temperature: f32,
+    pub temp: f32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
-pub struct LightSensorReading {
-    pub full_spectrum: u16,
+pub struct Light {
+    /// Full Spectrum light reading
+    pub fs: u16,
+    /// Lux reading
     pub lux: f32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
-pub struct GasSensorReading {
-    pub temperature: f32,
-    pub pressure: f32,
-    pub humidity: f32,
-    pub gas_resistance: u32,
+pub struct Gas {
+    /// Temparature
+    pub temp: f32,
+    /// Pressure
+    pub p: f32,
+    /// Humidity
+    pub h: f32,
+    /// Gas resistance
+    pub gas: u32,
 }
 
 /// [`SensorPlatform`] trait defines the sensor read operation for the platform,
@@ -81,7 +87,7 @@ pub trait MoistureSensor {
 
 /// allows device-specific impls of temp-specific sensor functionality
 pub trait TempSensor {
-    fn temperature(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError>;
+    fn temp(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, SoilSensorError>;
 }
 
 /// allows device-specific impls of lumens-specific sensor functionality

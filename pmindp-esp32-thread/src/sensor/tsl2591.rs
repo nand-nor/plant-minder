@@ -473,16 +473,16 @@ where
             log::warn!("Adjusting for consistent light sensor failures before attempting read");
             self.adjust_for_current_light().map_err(LightSensorError::from)?;
         }
-        let full_spectrum = self
+        let fs = self
             .get_luminosity(Mode::FullSpectrum)
             .map_err(LightSensorError::from)?;
-        log::debug!("Full spectrum luminosity {:?}", full_spectrum);
+        log::debug!("Full spectrum luminosity {:?}", fs);
 
         let lux = self.get_lux().map_err(LightSensorError::from)?;
         log::debug!("lux {:?}", lux);
 
-        let reading: pmindp_sensor::LightSensorReading =
-            pmindp_sensor::LightSensorReading { lux, full_spectrum };
+        let reading: pmindp_sensor::Light =
+            pmindp_sensor::Light { lux, fs };
 
         let reading = serde_json::to_vec(&reading).map_err(|e| {
             log::error!("Serde failed {e:}");
