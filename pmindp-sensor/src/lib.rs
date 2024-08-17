@@ -15,14 +15,23 @@
 
 use serde::{Deserialize, Serialize};
 
+/// [`PlantConfig`] struct is used at compile time by
+/// esp32 nodes, to report to the RPI what plants they
+/// are currently associated with
+#[toml_cfg::toml_config]
+pub struct PlantConfig {
+    #[default(666)]
+    pot_num: u32,
+    #[default("SirPots")]
+    name: &'static str,
+}
+
 /// System must have at a bare minimum soil sensor, all other
 /// sensors are optional
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
 pub struct SensorReading {
     pub soil: Soil,
-    //  #[serde(default)]
     pub light: Option<Light>,
-    //  #[serde(default)]
     pub gas: Option<Gas>,
     #[serde(default)]
     pub ts: i64,
@@ -37,7 +46,9 @@ pub const OTHER_IDX: usize = 4;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
 pub struct Soil {
+    /// Soil Moisture
     pub moisture: u16,
+    /// Optional temperature reading (some sensors may not have this)
     #[serde(default)]
     pub temp: f32,
 }

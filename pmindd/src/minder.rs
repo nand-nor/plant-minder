@@ -54,6 +54,7 @@ pub const MAX_WINDOW: usize = 50;
 pub struct Node {
     pub addr: Ipv6Addr,
     pub eui: Eui,
+    pub name: String,
     pub history: Vec<NodeSensorReading>,
 }
 
@@ -62,6 +63,7 @@ impl Default for Node {
         Self {
             addr: Ipv6Addr::from(0u128),
             eui: [0u8; 6],
+            name: String::default(),
             history: Vec::with_capacity(MAX_WINDOW),
         }
     }
@@ -123,6 +125,11 @@ impl PlantMinder {
     }
 
     pub async fn node_registration(&mut self, reg: Registration) {
+        log::info!(
+            "Received plant registrition for eui: {:?}, plant name {:?}",
+            reg.1,
+            reg.2
+        );
         let history = {
             if let Some(previous) = self.node_addrs.get(&reg.0) {
                 if let Some(entry) = self.nodes.get(previous) {
@@ -156,6 +163,7 @@ impl PlantMinder {
                 history,
                 addr: reg.1,
                 eui: reg.0,
+                name: reg.2,
             });
     }
 
@@ -175,9 +183,9 @@ impl PlantMinder {
     }
 
     fn render_node_last_table(&self, area: Rect, buf: &mut Buffer) {
-        let header_style = Style::default().fg(Color::Cyan).bg(Color::Black);
+        let header_style = Style::default().fg(Color::White).bg(Color::Cyan);
 
-        let header = ["Node", "Addr", "State"]
+        let header = ["Plant Name", "Ipv6 Addr", "State"]
             .into_iter()
             .map(Cell::from)
             .collect::<Row>()
@@ -193,7 +201,7 @@ impl PlantMinder {
                 } else {
                     let last = node.history.len();
                     match node.history[last - 1].data.soil.moisture {
-                        750..=1000 => "Good & moist".to_string(),
+                        750..=1500 => "Good & moist".to_string(),
                         501..=749 => "Ok (for now)".to_string(),
                         401..=500 => "Danger Zone".to_string(),
                         250..=400 => "WATER ME!".to_string(),
@@ -202,11 +210,7 @@ impl PlantMinder {
                 }
             };
 
-            let mut tmp: [u8; 8] = [0u8; 8];
-            tmp[2..].copy_from_slice(&node.eui);
-            let id = format!("{:#X}", u64::from_be_bytes(tmp));
-
-            Row::new(vec![id, addr.to_string(), node_state])
+            Row::new(vec![node.name.clone(), addr.to_string(), node_state])
                 .style(Style::new().fg(Color::Cyan).bg(Color::Black))
                 .height(3)
         });
@@ -268,14 +272,14 @@ impl PlantMinder {
         Tabs::new(TABS.to_vec())
             .style(
                 Style::new()
-                    .fg(Color::Cyan)
                     .bg(Color::Black)
+                    .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_style(
                 Style::new()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
+                    .bg(Color::Black)
+                    .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD)
                     .add_modifier(Modifier::REVERSED),
             )

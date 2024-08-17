@@ -75,13 +75,7 @@ impl<'a> NodeHistory<'a> {
             .state
             .nodes
             .iter()
-            .map(|entry| {
-                let mut tmp: [u8; 8] = [0u8; 8];
-                tmp[2..].copy_from_slice(&entry.eui);
-                let id = format!("{:#X}", u64::from_be_bytes(tmp));
-                let height: u16 = 1;
-                Row::new(vec![id]).height(height)
-            })
+            .map(|entry| Row::new(vec![entry.name.clone()]).height(1))
             .collect::<Vec<_>>();
 
         let max_rows = rows.len();
@@ -119,7 +113,7 @@ impl<'a> NodeHistory<'a> {
         StatefulWidget::render(
             Table::new(rows, &[Constraint::Length(20)])
                 .block(Block::new().style(Style::new().bg(Color::Black)))
-                .header(Row::new(vec!["Node EUI"]).style(Style::new().bg(Color::Blue)))
+                .header(Row::new(vec!["Plant Name"]).style(Style::new().bg(Color::Blue)))
                 .highlight_style(Style::new().fg(Color::White).bg(Color::Blue)),
             area,
             buf,

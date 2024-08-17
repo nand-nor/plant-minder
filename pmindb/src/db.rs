@@ -119,6 +119,7 @@ impl Handler<NodeSensorReading> for PlantDatabaseHandler {
 pub struct CreateOrModify {
     pub eui: Eui,
     pub ip: Ipv6Addr,
+    pub name: String,
 }
 
 type CreateOrModifyResponse = Result<(), DatabaseError>;
