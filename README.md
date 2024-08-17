@@ -61,11 +61,12 @@ The `pmindp-esp32-thread` crate contains all of the code needed to program micro
 
 Esp32 microcontrollers are used to control sensors and report data to the RPI via Thread, a wireless mesh protocol that runs on top of 802.15.4. Only 15.4 capable esp32 dev boards can be used; currently only esp32-c6 and esp32-h2 dev boards have an 802.15.4 native radio. 
 
-The `pmindp-esp32-thread` crate contains all the code for building & flashing the esp32 dev boards with attached sensors (see photos below for example). This code is built on top of / uses libraries from `esp-hal`, and the Thread capability is provided directly via the `openthread` stack, which we can call into from Rust via the `esp-openthread` repo. The boards run bare metal (via `esp-hal`) and have code to control the soil sensor as a simple i2c device. 
+The `pmindp-esp32-thread` crate contains all the code for building & flashing the esp32 dev boards with attached sensors (see photos below for example). This code is built on top of / uses libraries from `esp-hal`, and the Thread capability is provided directly via the `openthread` stack, which we can call into from Rust via the `esp-openthread` repo. The boards run bare metal (via `esp-hal`) and have code to control up to 5 i2c sensors of various types relevant to monitoring plant health. 
 
 As mentioned above, Thread provides the transport layer for reporting sensor data to the RPI. The code in the `pmindp-esp32-thread` crate programs the boards to program a hardcoded operational dataset to auto-attach to the Thread mesh network as a minimal thread device (MTD). It is worth noting that there is no support for NCP or RCP modes in the `esp-openthread` repo currently (these boards dont need it), so no need for dealing with any spinel shennanigans. 
 
-The code currently supports various sensors including a capacitive soil sensor and a resistive sensor for soil moisture, as well as a light sensor.
+More details on steps for building/running, currently supported sensors, and design details [provided here](./pmindp-esp32-thread/README.md).
+
 
 ### Broker Layer 
 
@@ -89,34 +90,29 @@ Some additional [details on test layer / expected output here](./pmind-tests/REA
 
 The main responsibility of this layer will be displaying sensor data as it is received from the mesh. It will do this very simply via TUI using `ratatui`, subscribing to event queues exposed by the broker layer. It is defined in the  `pmindd` crate.
 
-An additional goal for this layer is to interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. I am striving for this to be as simple as possible-- all I need is to be provided with a visual cue that it is time to water my plants. 
+An additional goal for this layer is to interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. I am striving for this to be as simple as possible-- all I need is to be provided with a visual cue that it is time to water my plants. But I also like having more data available so theres tabs for things like sensed light conditions as well. 
 
 Currently only simple data is rendered: soil moisture, temp, full spectrum light and lux, each as a graph rendered by node. 
 
-<img src="./doc/lux_over_time.png" width="600" height="340"> 
+<img src="./doc/moisture_over_time.png"> 
 
 More info on current status, build info, and [other details here](./pmindd/README.md).
-
 
 ## Status
 
 In general I would estimate this is roughly at 75% complete. Lots of work is still needed. But basic sensor control / running openthread on the esp32 devices, and receiving reported sensor data on the pi is working. Some minimal rendering of the received data is also complete.
 
 The work now largely revolves around the following:
-- Adding additional sensor support
 - Integrating an ORM and actually using a database
-- Plant records / sensor association
 - Sensor end devices behaving as more complex device types (see the section on [goals](#goals) and [limitations](#limitations))
 
 ## Goals
 
 One major goal is more complex OT device type support for remote sensor controllers. The `esp-openthread` repo currently only supports running esp32 boards as MTDs. Work is ongoing to add support for running as both FTDs and as SED/SSEDs. Ideally these nodes will be able to run as FTDs when mains powered (so they can route packets for eachother) and SED (sleepy end device) waking up only to read and publish sensor data, for battery powered devices. 
 
-Another goal is to eventually support other moisture sensors
-- [Sunfounder capacitive moister sensor](https://www.digikey.com/en/products/detail/sunfounder/ST0160/22116813) 
-- [SparkFun soil moisture sensor](https://www.digikey.com/en/products/detail/sparkfun-electronics/SEN-13322/5764506)
-- [Adafruit light sensor](https://www.adafruit.com/product/1980)
-- Others TBD (Co2)
+Another goal will be to support different front ends. It would be could to package sensor data into some standard format so it can be rendered by something like a grafana prometheus dashboard. 
+
+And yet another goal is to eventually support other moisture sensors and other Thread-capable dev boards, like SiLabs' Thing Plus MGM240P but I expect it will be some time before I can get something like that going.
 
 
 ## Limitations
