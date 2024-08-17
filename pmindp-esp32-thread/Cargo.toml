@@ -25,6 +25,8 @@ coap-lite = {version="0.12.0", features=["udp"],default-features=false}
 pmindp-sensor = {  path="../pmindp-sensor"}
 serde_json = {version = "1.0", default-features=false, features = ["alloc"] } 
 bme680 = {version = "0.7.0",  git = "https://github.com/nand-nor/bme680.git", branch="bump-embedded-hal-dep"}
+toml-cfg = {version= "0.2.0"}
+
 
 [features]
 default = []

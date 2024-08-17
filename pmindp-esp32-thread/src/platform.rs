@@ -153,10 +153,13 @@ where
                     if let Ok(packet) = Packet::from_bytes(&buffer[..len]) {
                         let request = CoapRequest::from_packet(packet, from);
 
+                        let plant_name = pmindp_sensor::PLANT_CONFIG.name;
+
                         let method = *request.get_method();
                         let path = request.get_path();
                         // TODO ! Need better solution
                         let port_req = request.message.header.message_id;
+                        
                         log::info!(
                             "Received CoAP request '{} {:?} {}' from {}",
                             port_req,
@@ -167,16 +170,18 @@ where
 
                         let mut response = request.response.unwrap();
                         self.openthread.get_eui(&mut eui);
-                        response.message.payload = eui.to_vec();
-
+                        let mut record = alloc::vec![];
+                        record.extend_from_slice(&eui.clone());
+                        record.extend_from_slice(plant_name.as_bytes());
+                        response.message.payload = record.to_vec();
                         let packet = response.message.to_bytes().unwrap();
                         socket.send(from, port_req, packet.as_slice()).ok();
 
                         let addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6> =
                             self.openthread.ipv6_get_unicast_addresses();
                         print_all_addresses(addrs);
-                        let role = self.openthread.get_device_role();
-                        log::info!("Role: {:?}, Eui {:#X?} port {:?}", role, eui, port_req);
+
+                        log::info!("Eui {:#X?} Plant Name {:?} Port {:?}", eui, plant_name, port_req);
 
                         drop(packet);
 

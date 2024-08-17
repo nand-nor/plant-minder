@@ -8,6 +8,7 @@ authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 embedded-hal = {version = "1.0"}
 serde_json = {version = "1.0", default-features=false, features = ["alloc"] } # optional=true}
 serde = {version="1.0", default-features=false, features = ["derive"] }
+toml-cfg = {version= "0.2.0"}
 
 [features]
 default=[]
