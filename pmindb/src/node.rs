@@ -16,7 +16,7 @@ pub enum NodeEvent {
     SensorReading(NodeSensorReading),
 }
 
-pub type Registration = (crate::Eui, Ipv6Addr);
+pub type Registration = (crate::Eui, Ipv6Addr, String);
 
 #[derive(Debug, Clone, Copy)]
 pub struct NodeSensorReading {

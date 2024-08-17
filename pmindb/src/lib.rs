@@ -46,3 +46,5 @@ pub type Eui = [u8; 6];
 
 /// Routing locator
 pub type Rloc = u16;
+
+const MAX_PLANT_NAME_SIZE: usize = 20;

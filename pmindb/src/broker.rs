@@ -83,7 +83,7 @@ impl BrokerCoordinator {
     /// For minimal builds that dont require database conn
     pub async fn new_no_db_con(
         stream_tx: UnboundedSender<UnboundedReceiver<NodeEvent>>,
-        registration_tx: UnboundedSender<(Eui, Ipv6Addr)>,
+        registration_tx: UnboundedSender<(Eui, Ipv6Addr, String)>,
         poll_interval: Duration,
     ) -> Result<Self, BrokerCoordinatorError> {
         let mut broker = Self {
@@ -168,7 +168,7 @@ impl BrokerCoordinator {
         omr_addr: Ipv6Addr,
         ip_addr: Ipv6Addr,
         port: u16,
-    ) -> Result<Option<(SocketAddrV6, Eui)>, BrokerCoordinatorError> {
+    ) -> Result<Option<(SocketAddrV6, Eui, Vec<u8>)>, BrokerCoordinatorError> {
         log::info!("Starting CoAP Registration for {ip_addr:} on port {port:}");
         let mut request: CoapRequest<SocketAddr> = CoapRequest::new();
         let mut buffer = [0u8; 512];
@@ -224,13 +224,15 @@ impl BrokerCoordinator {
                 log::debug!("Got a response from {from:}, expected {send_addr:}");
 
                 let mut eui: Eui = [0u8; 6];
+                let mut name = vec![];
                 if let Ok(packet) = Packet::from_bytes(&buffer[..len]) {
                     let resp = CoapRequest::from_packet(packet, from);
                     if resp.message.payload.len() >= 6 {
                         eui.copy_from_slice(&resp.message.payload[..6]);
                     }
+                    name = resp.message.payload[6..].to_vec().clone();
                 }
-                Ok(Some((addr, eui)))
+                Ok(Some((addr, eui, name)))
             }
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {
                 Ok(None)
@@ -241,12 +243,12 @@ impl BrokerCoordinator {
     async fn spawn_db_conn_registry_task(
         &mut self,
         db: Addr<PlantDatabaseHandler>,
-        mut registration_rcvr: UnboundedReceiver<(Eui, Ipv6Addr)>,
+        mut registration_rcvr: UnboundedReceiver<(Eui, Ipv6Addr, String)>,
     ) {
         let handle = tokio::spawn(async move {
-            while let Some((eui, rcv)) = registration_rcvr.recv().await {
+            while let Some((eui, rcv, name)) = registration_rcvr.recv().await {
                 log::trace!("Node being added to DB {:?} addr {:?}", eui, rcv);
-                if let Err(e) = db.send(CreateOrModify { eui, ip: rcv }).await {
+                if let Err(e) = db.send(CreateOrModify { eui, ip: rcv, name }).await {
                     log::error!("database actor handle error {e:}");
                 }
             }
@@ -263,7 +265,7 @@ impl BrokerCoordinator {
         poll: Duration,
         ot_mon: Addr<OtMonitor>,
         stream_sender: UnboundedSender<UnboundedReceiver<NodeEvent>>,
-        registration_sender: UnboundedSender<(Eui, Ipv6Addr)>,
+        registration_sender: UnboundedSender<(Eui, Ipv6Addr, String)>,
     ) {
         let handle = tokio::spawn(async move {
             log::info!(
@@ -314,7 +316,7 @@ impl BrokerCoordinator {
                                         log::error!("failure to register coap observer {e:}");
                                     });
 
-                                    if let Ok(Some((addr, eui))) = res {
+                                    if let Ok(Some((addr, eui, mut name))) = res {
                                         // Update monitor registration record after successful CoAP reg
                                         ot_mon_clone
                                             .send(Registration {
@@ -340,8 +342,16 @@ impl BrokerCoordinator {
                                             log::error!("failure to send sensor stream {e:}");
                                         }
 
+                                        if name.len() > crate::MAX_PLANT_NAME_SIZE {
+                                            name.drain(crate::MAX_PLANT_NAME_SIZE..);
+                                        }
+
+                                        // TODO: handle non utf8 input or in the case that we have
+                                        // drained the vec to a size that is not a valid codepoint?? can panic if we parse
+                                        let name = String::from_utf8(name).unwrap_or_default();
+
                                         // Send the sensor data source to the task managing those streams
-                                        if let Err(e) = _registration_sender.send((eui, ip)) {
+                                        if let Err(e) = _registration_sender.send((eui, ip, name)) {
                                             // TODO
                                             log::error!("failure to send sensor stream {e:}");
                                         }
