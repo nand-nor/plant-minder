@@ -41,6 +41,7 @@ pub use crate::sensor::ProbeCircuit;
 use core::{cell::RefCell, ptr::addr_of_mut};
 use critical_section::Mutex;
 use esp_hal::{
+    Blocking,
     clock::Clocks,
     gpio::GpioPin,
     interrupt::{self, Priority},
@@ -50,9 +51,8 @@ use esp_hal::{
     prelude::*,
     rmt::Rmt,
     rng::Rng,
-    timer::systimer::{Alarm, Target},
+    timer::systimer::{Alarm, SpecificComparator, SpecificUnit, Target},
     timer::timg::{Timer, Timer0, TimerGroup},
-    Blocking,
 };
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_ieee802154::Ieee802154;
@@ -72,7 +72,7 @@ pub fn init_heap() {
 
 pub type SensorVec = Vec<Option<Mutex<RefCell<Box<dyn Sensor>>>>>;
 
-type SensorTimer = Mutex<RefCell<Option<Timer<Timer0<TIMG0>, esp_hal::Blocking>>>>;
+type SensorTimer = Mutex<RefCell<Option<Timer<Timer0<TIMG0>, Blocking>>>>;
 
 static SENSOR_TIMER: SensorTimer = Mutex::new(RefCell::new(None));
 
@@ -87,7 +87,13 @@ static SENSOR_TIMER_FIRED: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false)
 pub fn init<'a>(
     ieee802154: &'a mut Ieee802154,
     clocks: &Clocks,
-    systimer: Alarm<Target, Blocking, 0>,
+    timer: Alarm<
+            'static,
+            Target,
+            Blocking,
+            SpecificComparator<'static, 0>,
+            SpecificUnit<'static, 0>,
+        >,
     timg0: TimerGroup<TIMG0, Blocking>,
     rmt: impl Peripheral<P = RMT> + 'a,
     led_pin: GpioPin<8>,
@@ -97,7 +103,7 @@ pub fn init<'a>(
 where
     Esp32Platform<'a>: SensorPlatform,
 {
-    let openthread = esp_openthread::OpenThread::new(ieee802154, systimer, Rng::new(rng));
+    let openthread = esp_openthread::OpenThread::new(ieee802154, timer, Rng::new(rng));
     #[cfg(not(feature = "esp32h2"))]
     let rmt = Rmt::new(rmt, 80.MHz(), clocks).unwrap();
     #[cfg(feature = "esp32h2")]
@@ -126,7 +132,7 @@ pub fn SENSOR_TIMER_TG0_T0_LEVEL() {
     });
 }
 
-fn setup_sensor_timer(timer: Timer<Timer0<TIMG0>, esp_hal::Blocking>, interval: u64) {
+fn setup_sensor_timer(timer: Timer<Timer0<TIMG0>, Blocking>, interval: u64) {
     timer.set_interrupt_handler(SENSOR_TIMER_TG0_T0_LEVEL);
 
     timer.clear_interrupt();

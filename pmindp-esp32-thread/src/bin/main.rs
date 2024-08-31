@@ -11,12 +11,13 @@ use esp_hal::{
     peripherals::Peripherals,
     prelude::*,
     system::SystemControl,
-    timer::{systimer::SystemTimer, timg::TimerGroup},
+    timer::{systimer::{SystemTimer, Alarm, FrozenUnit, SpecificUnit}, timg::TimerGroup},
 };
 
 extern crate alloc;
 
 use alloc::boxed::Box;
+use static_cell::StaticCell;
 
 #[cfg(feature = "probe-circuit")]
 use esp_hal::gpio::{Level, Output};
@@ -40,9 +41,13 @@ fn main() -> ! {
     let mut peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
-    let systimer = SystemTimer::new(peripherals.SYSTIMER);
     let mut ieee802154 = Ieee802154::new(peripherals.IEEE802154, &mut peripherals.RADIO_CLK);
     let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let systimer = SystemTimer::new(peripherals.SYSTIMER);
+    static UNIT0: StaticCell<SpecificUnit<'static, 0>> = StaticCell::new();
+    let unit0 = UNIT0.init(systimer.unit0);
+    let frozen_unit = FrozenUnit::new(unit0);
+    let alarm = Alarm::new(systimer.comparator0, &frozen_unit);
 
     #[cfg(not(feature = "esp32h2"))]
     let i2c = I2C::new(
@@ -123,7 +128,7 @@ fn main() -> ! {
     let mut platform = pmindp_esp32_thread::init(
         &mut ieee802154,
         &clocks,
-        systimer.alarm0,
+        alarm,
         TimerGroup::new(peripherals.TIMG0, &clocks),
         peripherals.RMT,
         io.pins.gpio8,
