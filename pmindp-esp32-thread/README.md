@@ -18,6 +18,7 @@ Supports the `esp32c6` and `esp32h2` model dev boards, as well as a number of se
 - [Design Details](#design-details)
    - [Generic Sensor Types](#generic-sensor-types)
    - [Error Handling and Recovery](#error-handling-and-recovery)
+- [Limitations and Future Work](#limitations-and-future-work)   
 
 
 # Build
@@ -87,6 +88,8 @@ INFO - Sending SensorReading { soil: Soil { moisture: 322, temp: 86.52355 }, lig
 
 And you should also see on the RPI the received data.
 
+<img src="../doc/sensor_esp32c6.jpg" width="250" height="300"> <-- soil sensor with breadboard
+
 Folks interested can set it up with a few different constructions/prototypes using protoboard (requires soldering obviously) for example:
 <img src="../doc/protoboard.jpg" width="600" height="800"> 
 
@@ -154,7 +157,14 @@ The following sensor types and models are supported, listed with the feature fla
 
 # Design Details
 
-At a high level the code can be describes as a simple event loop where, after a series of configuration steps, the node will join the Thread network and enter the main event loop. It will then service any tasklets/pending processes that arise due to normal openthread operation, waiting until it receives a CoAP observer registration from the RPI. Once that registration is received, the node will start reporting sensed data at a fixed interval, depending on which sensors are currently configured/attached to the board. If the node experiences some unrecoverable sensor error or otherwise drops of the Thread network, it will exit the event loop, which causes the node to reset itself. It will report the same EUI and other plat record-relevant data back to the RPI on reset, so it's old data entries can be associated with the newly registered address it configures itself with (which is unique on each reset). Below is a description of the general structure for supported sensor types as well as a section describing error handling in more detail. 
+Thread provides the transport layer for reporting sensor data to the RPI. Once programmed, esp32 dev boards come up as minimal thread devices (MTD) or child nodes. The code is currently designed to allow attachment to the Thread mesh network via hardcoded operational dataset. This is needed until the `esp-openthread` repo supports joiner functionality. It is also 
+worth noting that there is no support for NCP or RCP modes in the `esp-openthread` repo currently (these boards dont need it), so no need for dealing with any spinel shennanigans. 
+
+At a high level the controlling logic can be describes as a simple event loop where, after a series of configuration steps, the node will join the Thread network, open a socket on a pre-determined port known to the RPI (broker layer), and enter the main event loop. It will then service any tasklets/pending processes that arise due to normal openthread operation, waiting until it receives a CoAP observer registration from the RPI. 
+
+Once CoAP registration is received, the node will start reporting sensed data at a fixed interval, depending on which sensors are currently configured/attached to the board. If the node experiences some unrecoverable sensor error or otherwise drops of the Thread network, it will exit the event loop, which causes the node to reset itself.
+
+Below is a description of the general structure for supported sensor types as well as a section describing error handling in more detail. 
 
 ## Generic Sensor Types
 
@@ -173,3 +183,8 @@ Right now, if the node experiences an unrecoverable error it will trigger a rese
 Future optimizations will involve better recovery and logic to enable nodes to store data in NVS so they can perhaps store certain info like the dataset / can come back online after a power event and register with the same addresses etc
 
 There are also many places in both this code and in the branch of `esp-openthread` I am using where there are unwraps which need to be improved so that we dont panic anywhere. If there is a panic the reset logic will not trigger and the node will remain offline. So this needs some attention
+
+# Limitations and future work
+In general there are many; this is just a hobby project being done in my spare time. But arguably the biggest limitations of the current system is that the sensors currently only support acting as child devices on the thread network (MTDs) and are very simple in their implementation. The TL;DR of these limitations means that range is limited and the system will not really have the benefits of a full mesh (it will have a star, or hub and spoke topology). Therefore the child nodes cant be too far away from the RPI or they will drop off the network. The current impl also requires that no other router nodes be on the network that may be at any point "better parents" than the RPI (e.g. have better link quality w.r.t. any given child node). 
+
+There are a few reasons for this: the OT client implementation currently monitors the thread network by periodically pulling the child ip addresses (through the `childip` cli cmd) and checking the returned values to presence of new or absence of nodes. If the child nodes have better link quality with another router, they will perform mesh link establishment/basically reparent themselves to that router. That means that the RPI wont have access to the IP addresses of those child nodes via the `childip` cli command. Obtaining addresses that parents will route packets to child nodes for, without the child node performing some additional steps (service registration), then becomes an issue. This can be solved by adding code where the child nodes register services (a "soil sensor" service for example) with an SRP service registrar, which the RPI is providing as a border router. Then the RPI (or any device on the network really) can perform a service lookup to find such services, and to obtain a routable IP address that will allow parents to route packets using that address successfully to child nodes. That will add a lot more complexity so that will be added as a future enhancement. 

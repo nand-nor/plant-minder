@@ -24,6 +24,23 @@ pub struct PlantConfig {
     pot_num: u32,
     #[default("SirPots")]
     name: &'static str,
+    #[default("Jade")]
+    species: &'static str,
+    #[default(GrowthStage::Vegetative)]
+    growth_stage: GrowthStage,
+}
+
+pub struct Range<T> {
+    min: T,
+    max: T,
+}
+
+pub enum GrowthStage {
+    Sprouting,
+    Seedling,
+    Vegetative,
+    Reproductive,
+    Senescence,
 }
 
 /// System must have at a bare minimum soil sensor, all other

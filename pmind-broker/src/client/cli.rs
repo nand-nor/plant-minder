@@ -1,11 +1,11 @@
 use ipnet::Ipv6Net;
-/// Lazy implementation of the [`crate::client::OtClient`] trait
-/// provides interface to the otbr-agent layer
-/// via the ot-ctl CLI process
 use std::{net::Ipv6Addr, process::Command};
 
 use crate::{client::OtClient, OtClientError, Rloc};
 
+/// Lazy implementation of the [`crate::client::OtClient`] trait
+/// provides interface to the otbr-agent layer
+/// via the ot-ctl CLI process
 pub struct OtCliClient;
 
 impl OtCliClient {

@@ -1,11 +1,11 @@
-use crate::{Eui, OtClient, OtClientError, Rloc};
 use actix::prelude::*;
-
 use std::{
     collections::{HashMap, HashSet},
     net::Ipv6Addr,
 };
 use thiserror::Error;
+
+use crate::{Eui, OtClient, OtClientError, Rloc};
 
 #[derive(Error, Debug)]
 pub enum OtMonitorError {
@@ -17,10 +17,20 @@ pub enum OtMonitorError {
     PortError(String),
 }
 
-pub type NodeRcvPort = u16;
-pub struct Ports {
+type NodeRcvPort = u16;
+
+struct Ports {
     base: NodeRcvPort,
     ports: HashSet<NodeRcvPort>,
+}
+
+impl Default for Ports {
+    fn default() -> Self {
+        Self {
+            base: 6666,
+            ports: HashSet::from([6666, 6667, 6668, 6669]),
+        }
+    }
 }
 
 impl Ports {
@@ -71,7 +81,7 @@ impl Ports {
 
 pub struct OtMonitor {
     /// Track nodes that are currently registered
-    nodes: HashMap<NodeRcvPort, Registration>,
+    nodes: HashMap<NodeRcvPort, InternalRegistration>,
     /// Pool of free ports to grab from
     ports: Ports,
     addr: Ipv6Addr,
@@ -92,7 +102,7 @@ impl OtMonitor {
         };
 
         // 100 ports should be more than enough
-        let ports = Ports::new(1213, 100).unwrap();
+        let ports = Ports::new(1213, 100).unwrap_or_default();
 
         Self {
             nodes: HashMap::default(),
@@ -136,7 +146,7 @@ impl OtMonitor {
             .collect())
     }
 
-    pub fn register_node(&mut self, node: Registration) -> Result<(), OtMonitorError> {
+    pub fn register_node(&mut self, node: InternalRegistration) -> Result<(), OtMonitorError> {
         log::debug!("Registering node rloc {} : port {}", node.rloc, node.port);
         let port = node.port;
 
@@ -170,7 +180,7 @@ impl Actor for OtMonitor {
 /// fallen off the network
 #[derive(Message)]
 #[rtype(result = "NodeStatusResponse")]
-pub struct GetNodeStatus;
+pub(crate) struct GetNodeStatus;
 type NodeStatusResponse = Result<Vec<(u16, Ipv6Addr)>, OtMonitorError>;
 
 impl Handler<GetNodeStatus> for OtMonitor {
@@ -213,11 +223,10 @@ impl Handler<GetNodeStatus> for OtMonitor {
     }
 }
 
-/// The [`cli::OtMonitor`](cli/struct.OtMonitor.html) actor and
-/// other external event handlers may use this type
+/// The [`OtMonitor`] actor and other external event handlers may use this type
 #[derive(Message, Clone)]
 #[rtype(result = "NodeRegResponse")]
-pub struct Registration {
+pub(crate) struct InternalRegistration {
     pub rloc: Rloc,
     pub ip: Ipv6Addr,
     pub port: NodeRcvPort,
@@ -226,10 +235,10 @@ pub struct Registration {
 }
 
 type NodeRegResponse = Result<(), OtMonitorError>;
-impl Handler<Registration> for OtMonitor {
+impl Handler<InternalRegistration> for OtMonitor {
     type Result = NodeRegResponse;
 
-    fn handle(&mut self, msg: Registration, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: InternalRegistration, _ctx: &mut Self::Context) -> Self::Result {
         log::info!("Node rloc: {:?} node port {:?}", msg.rloc, msg.port);
         self.register_node(msg)
     }
@@ -238,7 +247,7 @@ impl Handler<Registration> for OtMonitor {
 /// Check for new nodes
 #[derive(Message)]
 #[rtype(result = "NewNodeResponse")]
-pub struct CheckNewNode;
+pub(crate) struct CheckNewNode;
 type NewNodeResponse = Result<Vec<(u16, Ipv6Addr)>, OtMonitorError>;
 
 impl Handler<CheckNewNode> for OtMonitor {
@@ -270,7 +279,7 @@ impl Handler<CheckNewNode> for OtMonitor {
 /// Check general network status, e.g. if OMR prefix has changed & needs updating
 #[derive(Message)]
 #[rtype(result = "MonitorNetworkResponse")]
-pub struct MonitorNetworkStatus;
+pub(crate) struct MonitorNetworkStatus;
 type MonitorNetworkResponse = Result<(), OtMonitorError>;
 
 impl Handler<MonitorNetworkStatus> for OtMonitor {
@@ -287,7 +296,7 @@ impl Handler<MonitorNetworkStatus> for OtMonitor {
 /// Get the OMR addr
 #[derive(Message)]
 #[rtype(result = "OmrResponse")]
-pub struct OmrIp;
+pub(crate) struct OmrIp;
 type OmrResponse = Result<Ipv6Addr, OtMonitorError>;
 
 impl Handler<OmrIp> for OtMonitor {
@@ -301,7 +310,7 @@ impl Handler<OmrIp> for OtMonitor {
 /// Get a free port to use when trying to register a new node
 #[derive(Message)]
 #[rtype(result = "ReserveFreePortResponse")]
-pub struct ReserveFreePort;
+pub(crate) struct ReserveFreePort;
 type ReserveFreePortResponse = Result<u16, OtMonitorError>;
 
 impl Handler<ReserveFreePort> for OtMonitor {
@@ -315,7 +324,7 @@ impl Handler<ReserveFreePort> for OtMonitor {
 /// Return the port if registration of new node needs retry
 #[derive(Message)]
 #[rtype(result = "ReturnFreePortResponse")]
-pub struct ReturnFreePort(pub u16);
+pub(crate) struct ReturnFreePort(pub u16);
 type ReturnFreePortResponse = ();
 
 impl Handler<ReturnFreePort> for OtMonitor {

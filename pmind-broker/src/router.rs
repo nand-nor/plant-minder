@@ -11,20 +11,18 @@ use tokio::{
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     time::Duration,
 };
-use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::{
-    db::{CreateOrModify, DatabaseError, NodeSensorReading},
     monitor::{
-        CheckNewNode, GetNodeStatus, MonitorNetworkStatus, OmrIp, Registration, ReserveFreePort,
-        ReturnFreePort,
+        CheckNewNode, GetNodeStatus, InternalRegistration, MonitorNetworkStatus, OmrIp,
+        ReserveFreePort, ReturnFreePort,
     },
     node::{NodeEvent, NodeHandler},
-    Eui, OtCliClient, OtMonitor, OtMonitorError, PlantDatabaseHandler,
+    Eui, OtCliClient, OtMonitor, OtMonitorError,
 };
 
 #[derive(Error, Debug)]
-pub enum BrokerCoordinatorError {
+pub enum EventRouterError {
     #[error("I/O Error")]
     Io(#[from] std::io::Error),
     #[error("OT monitor Error")]
@@ -35,61 +33,19 @@ pub enum BrokerCoordinatorError {
     CoAPMsgError(#[from] coap_lite::error::MessageError),
     #[error("AddrParse error")]
     AddrParse(#[from] std::net::AddrParseError),
-    #[error("Database Error")]
-    DatabaseError(#[from] DatabaseError),
 }
-pub struct BrokerCoordinator {
-    monitor_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
-    db_registry_conn_handle: Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
-    db_sensor_stream_conn_handle:
-        Option<tokio::task::JoinHandle<Result<(), BrokerCoordinatorError>>>,
+pub struct EventRouter {
+    monitor_handle: Option<tokio::task::JoinHandle<Result<(), EventRouterError>>>,
 }
 
-impl BrokerCoordinator {
-    pub async fn new(path: std::path::PathBuf) -> Result<Self, BrokerCoordinatorError> {
-        let (stream_tx, stream_rx) = unbounded_channel();
-        let (registration_tx, registration_rx) = unbounded_channel();
-
-        let mut broker = Self {
-            monitor_handle: None,
-            db_registry_conn_handle: None,
-            db_sensor_stream_conn_handle: None,
-        };
-
-        // Initialize and start actors
-        let database = PlantDatabaseHandler::new(path)?;
-        let database_handle = database.start();
-        let ot_mon = OtMonitor::new(Box::new(OtCliClient));
-        let ot_mon_handle = ot_mon.start();
-
-        broker
-            .spawn_db_conn_registry_task(database_handle.clone(), registration_rx)
-            .await;
-        broker
-            .spawn_child_mon_task(
-                Duration::from_secs(25),
-                ot_mon_handle,
-                stream_tx,
-                registration_tx,
-            )
-            .await;
-        broker
-            .spawn_db_conn_sensor_stream_task(database_handle, stream_rx)
-            .await;
-
-        Ok(broker)
-    }
-
-    /// For minimal builds that dont require database conn
-    pub async fn new_no_db_con(
+impl EventRouter {
+    pub async fn new(
         stream_tx: UnboundedSender<UnboundedReceiver<NodeEvent>>,
         registration_tx: UnboundedSender<(Eui, Ipv6Addr, String)>,
         poll_interval: Duration,
-    ) -> Result<Self, BrokerCoordinatorError> {
+    ) -> Result<Self, EventRouterError> {
         let mut broker = Self {
             monitor_handle: None,
-            db_registry_conn_handle: None,
-            db_sensor_stream_conn_handle: None,
         };
 
         let ot_mon = OtMonitor::new(Box::new(OtCliClient));
@@ -102,77 +58,20 @@ impl BrokerCoordinator {
         Ok(broker)
     }
 
-    /// For minimal builds
     pub async fn exec_monitor(&mut self) {
         self.monitor_handle.take().unwrap().await.ok();
-    }
-
-    pub async fn exec_task_loops(&mut self) {
-        log::debug!("Starting event and monitor loop tasks...");
-        self.db_registry_conn_handle.take().unwrap().await.ok();
-        self.monitor_handle.take().unwrap().await.ok();
-        self.db_sensor_stream_conn_handle.take().unwrap().await.ok();
-    }
-
-    async fn spawn_db_conn_sensor_stream_task(
-        &mut self,
-        db: Addr<PlantDatabaseHandler>,
-        mut receiver: UnboundedReceiver<UnboundedReceiver<NodeEvent>>,
-    ) {
-        let handle = tokio::spawn(async move {
-            loop {
-                while let Some(rcv) = receiver.recv().await {
-                    let db_clone = db.clone();
-                    tokio::spawn(async move {
-                        Self::process(UnboundedReceiverStream::new(rcv), db_clone).await
-                    });
-                }
-            }
-        });
-        self.db_sensor_stream_conn_handle = Some(handle);
-    }
-
-    async fn process(
-        mut stream: UnboundedReceiverStream<NodeEvent>,
-        db: Addr<PlantDatabaseHandler>,
-    ) {
-        log::trace!("Processing NodeEvent receiver as a stream");
-        while let Some(msg) = stream.next().await {
-            let db_clone = db.clone();
-            match msg {
-                NodeEvent::NodeTimeout(addr) => {
-                    log::warn!("Node {:?} timed out, closing receiver stream", addr);
-                }
-                NodeEvent::SensorReading(node) => {
-                    log::debug!("Reading! from {:?} data {:?}", node.addr, node.data);
-
-                    if let Err(e) = db_clone
-                        .send(NodeSensorReading((*node.addr.ip(), node.data)))
-                        .await
-                    {
-                        log::error!("Error sending to db handle {e:}");
-                    }
-                }
-                NodeEvent::SocketError(addr) => {
-                    log::warn!("Socket error on addr {:?}, closing receiver stream", addr);
-                }
-                event => {
-                    log::warn!("Setup error {event:?}, closing receiver stream");
-                }
-            }
-        }
-        log::warn!("Stream processing func closing");
     }
 
     async fn coap_observer_register(
         omr_addr: Ipv6Addr,
         ip_addr: Ipv6Addr,
         port: u16,
-    ) -> Result<Option<(SocketAddrV6, Eui, Vec<u8>)>, BrokerCoordinatorError> {
+    ) -> Result<Option<(SocketAddrV6, Eui, Vec<u8>)>, EventRouterError> {
         log::info!("Starting CoAP Registration for {ip_addr:} on port {port:}");
         let mut request: CoapRequest<SocketAddr> = CoapRequest::new();
         let mut buffer = [0u8; 512];
-        // following https://datatracker.ietf.org/doc/html/rfc7641 observing resources in CoAP
+        // following https://datatracker.ietf.org/doc/html/rfc7641
+        // observing resources in CoAP (loosely! needs work)
         request.set_method(RequestType::Get);
         request.set_path("/soilmoisture");
         request.message.set_token(vec![0xfa, 0xce, 0xbe, 0xef]);
@@ -230,7 +129,7 @@ impl BrokerCoordinator {
                     if resp.message.payload.len() >= 6 {
                         eui.copy_from_slice(&resp.message.payload[..6]);
                     }
-                    name = resp.message.payload[6..].to_vec().clone();
+                    name.clone_from(&resp.message.payload[6..].to_vec());
                 }
                 Ok(Some((addr, eui, name)))
             }
@@ -238,26 +137,6 @@ impl BrokerCoordinator {
                 Ok(None)
             }
         }
-    }
-
-    async fn spawn_db_conn_registry_task(
-        &mut self,
-        db: Addr<PlantDatabaseHandler>,
-        mut registration_rcvr: UnboundedReceiver<(Eui, Ipv6Addr, String)>,
-    ) {
-        let handle = tokio::spawn(async move {
-            while let Some((eui, rcv, name)) = registration_rcvr.recv().await {
-                log::trace!("Node being added to DB {:?} addr {:?}", eui, rcv);
-                if let Err(e) = db.send(CreateOrModify { eui, ip: rcv, name }).await {
-                    log::error!("database actor handle error {e:}");
-                }
-            }
-
-            log::warn!("DB node registry task exiting");
-            Ok(())
-        });
-
-        self.db_registry_conn_handle = Some(handle);
     }
 
     async fn spawn_child_mon_task(
@@ -274,7 +153,9 @@ impl BrokerCoordinator {
             );
 
             loop {
-                log::debug!("Polling for network change");
+                log::info!(
+                    "Monitor task: Polling for network change, new nodes, and missing nodes"
+                );
 
                 ot_mon
                     .send(MonitorNetworkStatus)
@@ -285,8 +166,7 @@ impl BrokerCoordinator {
                     })
                     .ok();
 
-                log::debug!("Polling for new nodes");
-                // yuck, need better logic here
+                // TODO need serious refactor here
                 if let Ok(nodes) = ot_mon.send(CheckNewNode).await? {
                     if let Ok(omr_addr) = ot_mon.send(OmrIp).await? {
                         futures::stream::iter(nodes)
@@ -308,7 +188,7 @@ impl BrokerCoordinator {
                                             1213 + i as u16
                                         }
                                     };
-                                    let res = BrokerCoordinator::coap_observer_register(
+                                    let res = EventRouter::coap_observer_register(
                                         omr_addr, ip, free_port,
                                     )
                                     .await
@@ -319,7 +199,7 @@ impl BrokerCoordinator {
                                     if let Ok(Some((addr, eui, mut name))) = res {
                                         // Update monitor registration record after successful CoAP reg
                                         ot_mon_clone
-                                            .send(Registration {
+                                            .send(InternalRegistration {
                                                 rloc,
                                                 ip,
                                                 eui,
@@ -331,26 +211,33 @@ impl BrokerCoordinator {
 
                                         let (sender, receiver) = unbounded_channel();
 
-                                        // This object will spawn tasks that will not close unless there are appropriate
-                                        // node events to trigger shutdown, such as node timeout, socket error, or
+                                        // This object will spawn tasks that will
+                                        // not close unless there are appropriate
+                                        // node events to trigger shutdown, such
+                                        // as node timeout, socket error, or
                                         // other lost node event
                                         let _new_node = NodeHandler::new(addr, sender).await;
 
-                                        // Send the sensor data source to the task managing those streams
+                                        // Send the sensor data source to the task
+                                        // managing those streams
                                         if let Err(e) = _stream_sender.send(receiver) {
                                             // TODO
                                             log::error!("failure to send sensor stream {e:}");
                                         }
 
+                                        // Shorten name (but this should be handled by
+                                        // calling subscribers, so TODO move this)
                                         if name.len() > crate::MAX_PLANT_NAME_SIZE {
                                             name.drain(crate::MAX_PLANT_NAME_SIZE..);
                                         }
 
-                                        // TODO: handle non utf8 input or in the case that we have
-                                        // drained the vec to a size that is not a valid codepoint?? can panic if we parse
+                                        // TODO: handle non utf8 input or in the case that
+                                        // we have drained the vec to a size that is not a
+                                        // valid codepoint?? can panic if we parse
                                         let name = String::from_utf8(name).unwrap_or_default();
 
-                                        // Send the sensor data source to the task managing those streams
+                                        // Send the sensor data source to the task managing
+                                        // those streams
                                         if let Err(e) = _registration_sender.send((eui, ip, name)) {
                                             // TODO
                                             log::error!("failure to send sensor stream {e:}");
@@ -372,7 +259,6 @@ impl BrokerCoordinator {
                     break;
                 }
 
-                log::debug!("Polling for lost nodes");
                 if let Ok(lost_nodes) = ot_mon.send(GetNodeStatus).await? {
                     // TODO need to handle this
                     if !lost_nodes.is_empty() {
@@ -393,16 +279,10 @@ impl BrokerCoordinator {
     }
 }
 
-impl Drop for BrokerCoordinator {
+impl Drop for EventRouter {
     fn drop(&mut self) {
-        if let Some(events) = &self.db_registry_conn_handle {
-            events.abort();
-        }
         if let Some(mon) = &self.monitor_handle {
             mon.abort();
-        }
-        if let Some(streams) = &self.db_sensor_stream_conn_handle {
-            streams.abort();
         }
     }
 }

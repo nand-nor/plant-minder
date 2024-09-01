@@ -1,6 +1,6 @@
-use pmindb::{Eui, NodeSensorReading, Registration};
+use pmind_broker::{Eui, NodeSensorReading, NodeState, NodeStatus, Registration};
 use std::{collections::HashMap, net::Ipv6Addr};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, SetSize};
 use ratatui::{
@@ -17,7 +17,7 @@ use ratatui::{
 };
 use std::{io, panic};
 
-use crate::{ui::NodeHistoryState, PlantMinderError};
+use crate::{event::AppCmd, ui::NodeHistoryState, PlantMinderError};
 
 pub type PlantMinderResult<T> = std::result::Result<T, PlantMinderError>;
 
@@ -34,9 +34,7 @@ const CMD_KEYS: &[(&str, &str)] = &[
 #[derive(Debug)]
 pub struct PlantMinder {
     pub running: bool,
-    pub sensor_streams: Vec<tokio::task::JoinHandle<()>>,
     pub state: TableState,
-    pub data_queue: UnboundedSender<NodeSensorReading>,
     pub data_queue_rx: UnboundedReceiver<NodeSensorReading>,
 
     pub nodes: HashMap<Ipv6Addr, Node>,
@@ -56,6 +54,7 @@ pub struct Node {
     pub eui: Eui,
     pub name: String,
     pub history: Vec<NodeSensorReading>,
+    pub state: NodeState,
 }
 
 impl Default for Node {
@@ -65,19 +64,16 @@ impl Default for Node {
             eui: [0u8; 6],
             name: String::default(),
             history: Vec::with_capacity(MAX_WINDOW),
+            state: NodeState::Unknown,
         }
     }
 }
 
 impl PlantMinder {
-    pub fn new(read_timeout: u64) -> Self {
-        let (data_queue, data_queue_rx) = unbounded_channel();
-
+    pub fn new(read_timeout: u64, data_queue_rx: UnboundedReceiver<NodeSensorReading>) -> Self {
         Self {
             running: true,
-            sensor_streams: vec![],
             state: TableState::default().with_selected(0),
-            data_queue,
             data_queue_rx,
             node_addrs: HashMap::new(),
             nodes: HashMap::new(),
@@ -91,7 +87,7 @@ impl PlantMinder {
 
     pub async fn tick(&mut self) {
         let mut buffer: Vec<NodeSensorReading> = vec![];
-        self.recv_many(&mut buffer, 10).await;
+        self.recv_many(&mut buffer, 20).await;
     }
 
     pub fn quit(&mut self) {
@@ -164,6 +160,7 @@ impl PlantMinder {
                 addr: reg.1,
                 eui: reg.0,
                 name: reg.2,
+                state: NodeState::Online,
             });
     }
 
@@ -331,6 +328,54 @@ impl PlantMinder {
                 self.render_node_last_table(area, buf);
             }
         };
+    }
+}
+
+pub async fn handle_app_cmd(cmd: AppCmd, app: &mut PlantMinder) {
+    match cmd {
+        AppCmd::Quit => app.quit(),
+        AppCmd::Next => {
+            if app.tab == NUM_TABS - 1 {
+                app.tab = 0;
+            } else {
+                app.tab += 1;
+            }
+        }
+        AppCmd::Back => {
+            if app.tab == 0 {
+                app.tab = NUM_TABS - 1;
+            } else {
+                app.tab -= 1;
+            }
+        }
+        AppCmd::Down => {
+            app.row += 1;
+        }
+        AppCmd::Up => {
+            if app.row == 0 {
+                if !app.node_addrs.is_empty() {
+                    app.row = app.node_addrs.len() - 1;
+                } else {
+                    app.row = 0;
+                }
+            } else {
+                app.row -= 1;
+            }
+        }
+        e => {
+            log::debug!("Unimplemented event received {e:?}");
+            // drop it for now
+        }
+    }
+}
+
+pub async fn handle_node_state_change(event: NodeStatus, app: &mut PlantMinder) {
+    match event {
+        NodeStatus::Registration(reg) => app.node_registration(reg).await,
+        NodeStatus::Termination((_addr, _error_state)) => {
+            // TODO
+            log::info!("TODO! report this in rendered display");
+        }
     }
 }
 

@@ -5,9 +5,9 @@ RPI4 + soil sensors to track when my plants need watering.
 ## Contents
 - [Description](#description)
 - [Components / Design Details](#components--workspace-design-details)
-  - [Esp32 / Sensors](#esp32sensor-layer)
-  - [Broker layer](#broker-layer)
-  - [TUI layer](#front-end--tui-layer) 
+  - [Esp32 / Sensors](#pmindp-esp32-thread-esp32sensors)
+  - [Broker](#pmind-broker-broker)
+  - [Broker Clients (TUI and Database)](#pmindd-and-pmindb-broker-client-subscribers) 
 - [Status](#status)
 - [Goals](#goals)
 - [Limitations](#limitations)
@@ -18,85 +18,75 @@ RPI4 + soil sensors to track when my plants need watering.
 This repo contains (mostly) all needed code for deployiong a simple plant monitoring system, which is a distributed system of microcontrollers programmed to control and report sensor data. Microcontrollers sense and report soil moisture data via a wireless mesh protocol, which is received by a raspberry pi. The pi has logic to determine soil conditions / trends and will ultimately alert me with a big obvious visual display whenever I need to water my plants.
 
 ```
-         _            ________________________             _
-        |            |                        |             |             
-        |   pmindd > |      TUI Front End     |             |   < plant-minder
-        |            |________________________|             |    (single binary)
-        |                ^               |                  |   
-    RPI |                | Events        | Subscribe        | 
-        |             ___|_______________v____              |          __________
-        |            |                        |             |         |  sqlite  |
-        |   pmindb > |     Broker / Backend   |             |-------> | database |
-        |            |_________(CoAP)_________|            _|         |__________|
-        |                ^            |         
-        |             ___|____________v_______             
-        |            |      otbr-agent/       |             
-        |            |       openthread       |             
-        |_           |________________________|            
-                       ^          ^          ^             
-                       | 802.15.4 |          |      
-                       |          |          |                
-                     __|___    ___|___    ___|___ 
-pmindp-esp32-thread>| ESP32|  | ESP32 |  | ESP32 | <-- CoAP
-                     ------    -------    ------- 
-                       ^          ^          ^
-                       | i2c      |          |
-                    ___v____   ___v____   ___v____    
-                   | Sensor | | Sensor | | Sensor | 
-                    --------   --------   --------  
+         _        __________________________________________________      _
+        |        |                     pmindd                       |      |
+        |        |                  TUI Front End                   |      |  < plant-minder
+        |        |__________________________________________________|      |   single binary 
+        |            ^  Events /     |  Subscribe             ^ History    |   
+        |            |  data         |                        | (optional) |   
+RPI Host|         ___|_______________v____   Subscribe    ____v_____       |
+config'd|        |      pmind-broker      | ---------->  |  pmindb  |      |
+for RCP |        |     Broker / Backend   | Events/data  |  sqlite  |      |
+ mode w |        |________________________| <----------  | database |      |
+15.4 SoC|            ^           ^                       |__________|     _|
+ dongle |            |           | ot-cli 
+        |            |   ________v__________________________________                               
+        |            |  |          otbr-agent/ openthread           |  
+        |            |  |___________________________________________|
+        |            |    |                              ^
+        |         ___v____v______________________________|__________           
+        |        |  linux kernel (15.4 drivers, IPv6 stack etc.)    |             
+        |_       |__________________________________________________|            
+                     ^                   ^                   ^             
+                     | 802.15.4          |                   |       
+                     |                   |                   |                     
+                   __|_____          ____|___              __|_____      _
+                  | ESP32  |        | ESP32  |            | ESP32  |      | < pmindp-esp32-thread
+                  | sensor |        | Sensor |            | sensor |      |  each node can support
+                  |________|        |________|            |________|     _|   multiple i2c sensors
+                                                         
 ```
-<img src="./doc/sensor_esp32c6.jpg" width="250" height="300"> <--sensor alone
-<img src="./doc/sensor_in_plant2.jpg" width="265" height="340"> <-- sensor in plant
 
-### Components / Workspace Design details
-The `pmindd` crate is where the front end/TUI rendering logic is defined (or, will be, when this is closer to being done). 
-
-The `pmindb` crate is a lib where the the broker/monitor layer is defined / implemented.
-
-The `otbr-agent` / `openthread` layer running on the pi is provided via a 3rd party binary; the pi must be set up to run the openthread stack via `otbr-agent`. More details / build steps available in [the parts list](./doc/part_list.md).
-
-The `pmindp-esp32-thread` crate contains all of the code needed to program microcontrollers to control the soil sensor & to respond to CoAP registration requests from an observer (done by the broker layer in `pmindb`). 
-
-### ESP32/Sensor Layer
-
-Esp32 microcontrollers are used to control sensors and report data to the RPI via Thread, a wireless mesh protocol that runs on top of 802.15.4. Only 15.4 capable esp32 dev boards can be used; currently only esp32-c6 and esp32-h2 dev boards have an 802.15.4 native radio. 
-
-The `pmindp-esp32-thread` crate contains all the code for building & flashing the esp32 dev boards with attached sensors (see photos below for example). This code is built on top of / uses libraries from `esp-hal`, and the Thread capability is provided directly via the `openthread` stack, which we can call into from Rust via the `esp-openthread` repo. The boards run bare metal (via `esp-hal`) and have code to control up to 5 i2c sensors of various types relevant to monitoring plant health. 
-
-As mentioned above, Thread provides the transport layer for reporting sensor data to the RPI. The code in the `pmindp-esp32-thread` crate programs the boards to program a hardcoded operational dataset to auto-attach to the Thread mesh network as a minimal thread device (MTD). It is worth noting that there is no support for NCP or RCP modes in the `esp-openthread` repo currently (these boards dont need it), so no need for dealing with any spinel shennanigans. 
-
-More details on steps for building/running, currently supported sensors, and design details [provided here](./pmindp-esp32-thread/README.md).
+<img src="./doc/protoboard_with_light_sensor.jpg" width="330" height="330"> <--protoboard with tsl2591
+<img src="./doc/sensor_in_plant2.jpg" width="265" height="340"> <-- breadboard
 
 
-### Broker Layer 
+## Components / Workspace Design details
 
-Defined in the `pmindb` crate, this is the layer that interfaces with the otbr-agent to provide the following responsibilities/functionality
-- node monitoring & management
+### `pmindp-esp32-thread`: ESP32/Sensors
+
+The `pmindp-esp32-thread` crate contains all of the code needed to program esp32c6 or esp32h2 dev boards to control/read from attached sensors, to respond to CoAP registration requests (done by the broker layer), and to continuously report sensor data once registered. Data is reported directly to the RPI host controller via Thread, a wireless mesh protocol that runs on top of 802.15.4. 
+
+The `pmindp-esp32-thread` crate contains all the code needed for building & flashing the esp32 dev boards with attached sensors. TThe boards run bare metal (via `esp-hal`), with a minimal `openthread` stack, with Rust bindings provided via the `esp-openthread` repo. The code currently can control up to 5 i2c sensors of various types relevant to monitoring plant health. Only 15.4 capable esp32 dev boards can be used; currently only esp32-c6 and esp32-h2 dev boards have an 802.15.4 native radio. More details on steps for building/running, currently supported sensors, and design details [provided here](./pmindp-esp32-thread/README.md).
+
+
+### `pmind-broker`: Broker
+
+A major component of the system is the broker, which is defined in the `pmind-broker` crate. This crate defines a public API for clients to subscribe to sensor node data. The broker logic interfaces with the Thread mesh (via the `otbr-agent`/ `openthread` stack) to provide the following:
+- node state monitoring & management
   - register new nodes as they come online (done automatically)
-  - manage when nodes drop off the network
-  - associate nodes that have had to reset themselves with their previous database entry (TBD)
-- manage socket(s) where sensor data is received 
-- push data into event queues and/or database (TBD what this piece will look like)
-- expose event queues for the TUI front end to subscribe 
-- provide requested info from the database 
+  - manage when nodes drop off the network (socket clean up, notify subscribing clients)
+- node data management and routing, enqueuing data to event queues that external clients can poll / receive data on
 
-It also interfaces with the front end layer to expose the data that gets rendered in (eventually) graphs and decisions around when it is time to water things. 
+### `pmindd` and `pmindb`: Broker Client Subscribers 
 
-A main goal for this layer is to provide node management/monitoring, so that the system is fault tolerant and even if remote nodes fall off the network they will be picked back up and register to report sensor data as soon as they rejoin the network. This layer also is meant to handle received data and generate relevant event notifications etc. based on top-level subscriptions, so that I can ideally support different front end apps if I ever get to that point. 
+This piece is still evolving but some functionality is currently in place. Currently able to render a nice display (via TUI provided by `pmindd`, see picture below) and there exists some simple database functionality. 
 
-Some additional [details on test layer / expected output here](./pmind-tests/README.md).
+#### Tui front end 
 
-### Front end / TUI Layer
-
-The main responsibility of this layer will be displaying sensor data as it is received from the mesh. It will do this very simply via TUI using `ratatui`, subscribing to event queues exposed by the broker layer. It is defined in the  `pmindd` crate.
-
-An additional goal for this layer is to interface with the broker layer to query the database for rendering data trends and retrieving stored state like associations of plants with sensors, plant species, ideal soil moisture conditions, that sort of thing. I am striving for this to be as simple as possible-- all I need is to be provided with a visual cue that it is time to water my plants. But I also like having more data available so theres tabs for things like sensed light conditions as well. 
-
-Currently only simple data is rendered: soil moisture, temp, full spectrum light and lux, each as a graph rendered by node. 
+The `pmindd` crate is where the front end/TUI rendering logic is defined. It is intended to be a client that subsribes to events as exposed via the broker layer. 
 
 <img src="./doc/moisture_over_time.png"> 
 
-More info on current status, build info, and [other details here](./pmindd/README.md).
+The main responsibility of the TUI layer is to display sensor data as it is received from the mesh. It receives data by subscribing to event queues exposed by the broker layer. "Graphic" rendering is achieved using the `ratatui`crate (its not really graphical but lets pretend). Currently only simple data is rendered: soil moisture, temp, full spectrum light and lux, each as a graph rendered by node. More info on current status, build info, and [other details here](./pmindd/README.md).
+
+#### Database
+
+The `pmindb` crate defines a sqlite database handle that can be optionally configured as a subscribing client to the broker. This piece is still a work in progress-- it needs a better API but hopefully will ultimately allow supporting different front ends eventually. 
+
+### `OpenThread` and `otbr-agent`
+
+The `otbr-agent` / `openthread` layer running on the pi is provided via a 3rd party binary; the pi must be set up to run the `openthread` stack via `otbr-agent`. More details / build steps available in [the parts list](./doc/part_list.md). The best resource for build details and general Thread info is [the openthread site](https://openthread.io/), and the [openthread github org](https://github.com/openthread/), which hosts  the opensource implementation of the Thread protocol. 
 
 ## Status
 

@@ -1,9 +1,10 @@
 use tokio::sync::mpsc::unbounded_channel;
 
-use pmindb::BrokerCoordinator;
+use pmind_broker::BrokerError;
 use pmindd::{
-    event::{handle_app_cmd, handle_node_reg_task, handle_sensor_stream_task, Event, EventHandler},
-    minder::{PlantMinder, PlantMinderResult, Tui},
+    event::{Event, EventHandler},
+    minder::{handle_app_cmd, handle_node_state_change, PlantMinder, PlantMinderResult, Tui},
+    PlantMinderError,
 };
 use tracing_appender::rolling;
 use tracing_subscriber::FmtSubscriber;
@@ -25,22 +26,37 @@ async fn main() -> PlantMinderResult<()> {
 
     tracing::subscriber::set_global_default(sub).expect("Unable to set up tracing subscriber");
 
-    let (stream_tx, stream_rx) = unbounded_channel();
-    let (registration_tx, registration_rx) = unbounded_channel();
+    let (client_event_tx, client_event_rx) = unbounded_channel();
+    let mut app = PlantMinder::new(500, client_event_rx);
 
-    let mut broker = BrokerCoordinator::new_no_db_con(
-        stream_tx,
-        registration_tx,
+    let broker_handle = pmind_broker::broker(
         tokio::time::Duration::from_secs(15),
+        500, // tick rate for broker event loop is in millis
     )
-    .await?;
-    let mut app = PlantMinder::new(500);
+    .await
+    .map_err(|e| {
+        log::error!("Error creating broker & handle {e:}");
+        PlantMinderError::BrokerError(e)
+    })?;
 
-    tokio::spawn(async move {
-        broker.exec_monitor().await;
-    });
+    let (sensor_stream_tx, sensor_stream_rx) = unbounded_channel();
+    let (node_state_tx, node_state_rx) = unbounded_channel();
 
-    let mut events = EventHandler::new(1, stream_rx, registration_rx);
+    let mut events = EventHandler::new(1, sensor_stream_rx, node_state_rx, client_event_tx);
+
+    // Subscribe to all node sensor related events
+    broker_handle
+        .send(pmind_broker::ClientSubscribe {
+            id: 0,
+            sensor_readings: sensor_stream_tx,
+            node_status: node_state_tx,
+        })
+        .await
+        .map_err(|e| {
+            log::error!("Error sending client subscribe request {e:}");
+            PlantMinderError::BrokerError(BrokerError::ActorError)
+        })??;
+
     let mut tui = Tui::new()?;
     tui.init()?;
 
@@ -49,12 +65,7 @@ async fn main() -> PlantMinderResult<()> {
         match events.next().await {
             Ok(Event::Tick) => app.tick().await,
             Ok(Event::AppCmd(cmd)) => handle_app_cmd(cmd, &mut app).await,
-            Ok(Event::SensorNodeEvent(r)) => {
-                handle_sensor_stream_task(&mut app, r).await;
-            }
-            Ok(Event::NodeRegistration(n)) => {
-                handle_node_reg_task(&mut app, n).await;
-            }
+            Ok(Event::NodeState(status)) => handle_node_state_change(status, &mut app).await,
             Err(e) => {
                 log::error!("Error in app event loop {e:}, exiting");
                 break;
