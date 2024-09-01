@@ -30,14 +30,20 @@ pub struct PlantConfig {
     growth_stage: GrowthStage,
 }
 
-pub struct Range<T> {
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Debug)]
+pub struct Range<T>
+where
+    T: Serialize + Default + Clone,
+{
     min: T,
     max: T,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq)]
 pub enum GrowthStage {
     Sprouting,
     Seedling,
+    #[default]
     Vegetative,
     Reproductive,
     Senescence,

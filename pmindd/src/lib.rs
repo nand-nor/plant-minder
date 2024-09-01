@@ -8,6 +8,7 @@ pub mod minder;
 pub mod ui;
 
 use pmind_broker::BrokerError;
+use pmindb::DatabaseError;
 
 use thiserror::Error;
 
@@ -19,4 +20,6 @@ pub enum PlantMinderError {
     BrokerError(#[from] BrokerError),
     #[error("Event Handling Error")]
     EventError,
+    #[error("Database Error")]
+    DatabaseError(#[from] DatabaseError),
 }

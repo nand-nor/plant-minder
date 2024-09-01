@@ -1,6 +1,6 @@
 //! The `pmindb` crate defines the database functionality for the plant-minder
 //! system running on the RPI. Maintains database via
-//! [`db::PlantDatabaseHandler`](db/struct.PlantDatabaseHandler.html)
+//! [`db::PlantDatabaseHandler`]
 //! an [`actix::Actor`] oject, to do the following:
 //!    1. Record / track node info, using  [`pmind_broker::Eui`]'s to associate nodes
 //!       & their current IPv6 address with a plant record. Each plant record
@@ -12,5 +12,41 @@
 //!       the address changes
 
 mod db;
+mod models;
+mod schema;
 
-pub(crate) use db::PlantDatabaseHandler;
+use chrono::NaiveDateTime;
+pub use db::{DatabaseError, PlantDatabaseHandler};
+use pmind_broker::{Eui, NodeSensorReading};
+
+#[async_trait::async_trait]
+pub trait PlantMinderDatabase {
+    /// Get all available sensor data for the [`pmind_broker::Eui`] since
+    /// the provided timestamp. A timestamp of [`chrono::Local::now().naive_dt()`]
+    /// will return an empty vector
+    async fn get_full_history_since_ts(
+        &self,
+        eui: Eui,
+        timestamp: NaiveDateTime,
+    ) -> Result<Vec<NodeSensorReading>, DatabaseError>;
+
+    /// Get all available sensor data for the [`pmind_broker::Eui`] 
+    /// in the stored database
+    async fn get_full_history(&self, eui: Eui) -> Result<Vec<NodeSensorReading>, DatabaseError>;
+    
+}
+
+#[async_trait::async_trait]
+impl PlantMinderDatabase for PlantDatabaseHandler {
+    async fn get_full_history(&self, eui: Eui) -> Result<Vec<NodeSensorReading>, DatabaseError> {
+        todo!()
+    }
+
+    async fn get_full_history_since_ts(
+        &self,
+        eui: Eui,
+        timestamp: NaiveDateTime,
+    ) -> Result<Vec<NodeSensorReading>, DatabaseError> {
+        todo!()
+    }
+}

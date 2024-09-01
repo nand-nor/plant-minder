@@ -6,6 +6,9 @@ use pmindd::{
     minder::{handle_app_cmd, handle_node_state_change, PlantMinder, PlantMinderResult, Tui},
     PlantMinderError,
 };
+
+use pmindb::PlantDatabaseHandler;
+
 use tracing_appender::rolling;
 use tracing_subscriber::FmtSubscriber;
 
@@ -56,6 +59,27 @@ async fn main() -> PlantMinderResult<()> {
             log::error!("Error sending client subscribe request {e:}");
             PlantMinderError::BrokerError(BrokerError::ActorError)
         })??;
+
+    #[cfg(feature = "database")]
+    {
+        let (mut db_handle, db_stream_tx, db_state_tx) =
+            PlantDatabaseHandler::new_with_db_conn_tasks("file:./plantminder.db").await?;
+
+        // Set up database subscription to all node sensor related events
+        broker_handle
+            .send(pmind_broker::ClientSubscribe {
+                id: 1,
+                sensor_readings: db_stream_tx,
+                node_status: db_state_tx,
+            })
+            .await
+            .map_err(|e| {
+                log::error!("Error sending database subscribe request {e:}");
+                PlantMinderError::BrokerError(BrokerError::ActorError)
+            })??;
+
+        app.enable_database(db_handle)?;
+    }
 
     let mut tui = Tui::new()?;
     tui.init()?;

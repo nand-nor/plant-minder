@@ -10,8 +10,13 @@ actix = {version = "0.13.5", features=["macros"]}
 log = {version= "0.4.21"}
 env_logger = {version= "0.11.3"}
 pmind-broker = {  path="../pmind-broker"}
+pmindb = {  path="../pmindb"}
 
 
 [[bin]]
 path = "./src/thread_mesh.rs"
 name = "broker-mesh-test"
+
+[[bin]]
+path = "./src/db_test.rs"
+name = "db-with-broker-test"

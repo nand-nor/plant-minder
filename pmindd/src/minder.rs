@@ -1,4 +1,7 @@
 use pmind_broker::{Eui, NodeSensorReading, NodeState, NodeStatus, Registration};
+#[cfg(feature = "database")]
+use pmindb::PlantMinderDatabase;
+
 use std::{collections::HashMap, net::Ipv6Addr};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -31,7 +34,7 @@ const CMD_KEYS: &[(&str, &str)] = &[
     ("↓", ": scroll node down"),
 ];
 
-#[derive(Debug)]
+//#[derive(Debug)]
 pub struct PlantMinder {
     pub running: bool,
     pub state: TableState,
@@ -44,6 +47,8 @@ pub struct PlantMinder {
     pub row: usize,
     pub window_start: usize,
     pub window_end: usize,
+    #[cfg(feature = "database")]
+    pub db: Option<Box<dyn PlantMinderDatabase>>,
 }
 
 pub const MAX_WINDOW: usize = 50;
@@ -82,6 +87,8 @@ impl PlantMinder {
             row: 0,
             window_start: 0,
             window_end: 0,
+            #[cfg(feature = "database")]
+            db: None,
         }
     }
 
@@ -92,6 +99,15 @@ impl PlantMinder {
 
     pub fn quit(&mut self) {
         self.running = false;
+    }
+
+    #[cfg(feature = "database")]
+    pub fn enable_database(
+        &mut self,
+        db: impl PlantMinderDatabase + 'static,
+    ) -> PlantMinderResult<()> {
+        self.db = Some(std::boxed::Box::new(db));
+        Ok(())
     }
 
     pub async fn recv_many(&mut self, buffer: &mut Vec<NodeSensorReading>, limit: usize) {
@@ -122,7 +138,8 @@ impl PlantMinder {
 
     pub async fn node_registration(&mut self, reg: Registration) {
         log::info!(
-            "Received plant registrition for eui: {:?}, plant name {:?}",
+            "Received plant registrition for eui: {:?}, addr {:?}, plant name {:?}",
+            reg.0,
             reg.1,
             reg.2
         );

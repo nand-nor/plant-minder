@@ -180,7 +180,7 @@ impl Broker {
                     };
                 }
                 Some(data) = self.data_queue_rx.recv() => {
-                    self.subscribers.iter().for_each(|(_key, val)|{
+                    self.subscribers.iter().for_each(|(key, val)|{
                         val.0.send(data).map_err(|e|{
                             log::error!("Failure to send to client data \
                                 receiver {e:} for client ID {key:}");
