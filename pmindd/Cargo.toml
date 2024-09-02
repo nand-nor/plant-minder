@@ -6,6 +6,7 @@ authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 
 [dependencies]
 pmindb = {  path="../pmindb"}
+pmind-broker = {  path="../pmind-broker"}
 pmindp-sensor = {  path="../pmindp-sensor", features=["std"]}
 tokio = {version = "1.37.0", features=["full"]}
 thiserror = {version="1.0.59"}
@@ -27,3 +28,6 @@ tracing-log = "0.2.0"
 path = "./src/bin/main.rs"
 name = "plant-minder"
 
+[features]
+default = ["database"]
+database = []

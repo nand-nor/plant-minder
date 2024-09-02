@@ -1,0 +1,18 @@
+[package]
+name = "pmind-broker"
+version = "0.1.0"
+edition = "2021"
+authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
+
+[dependencies]
+tokio = {version = "1.37.0", features=["full"] }
+actix = {version = "0.13.5", features=["macros"]}
+coap-lite = {version="0.12.0", features=["udp"]}
+ipnet = "2.9.0"
+thiserror = {version="1.0.59"}
+log = {version= "0.4.21"}
+futures = "0.3.30"
+pmindp-sensor = {  path="../pmindp-sensor", features=["std"]}
+tokio-stream = "0.1.15"
+chrono = {version="0.4.38"}
+serde_json = {version = "1.0"}

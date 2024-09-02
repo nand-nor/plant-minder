@@ -1,3 +1,5 @@
+use pmindb::PlantDatabaseHandler;
+
 #[actix::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -11,20 +13,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             e
         })?;
 
-    // All received data will be dropped because no client is polling the recv streams
-    // but this is OK for testing just the broker layer
-    let (sensor_stream_tx, _sensor_stream_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (node_state_tx, _node_state_rx) = tokio::sync::mpsc::unbounded_channel();
+    log::info!("Initializing database");
 
+    let (_db_handle, db_stream_tx, db_state_tx) =
+        PlantDatabaseHandler::new_with_db_conn_tasks("sqlite:./test.db").await?;
+
+    // Set up database subscription to all node sensor related events
     broker_handle
         .send(pmind_broker::ClientSubscribe {
             id: 0,
-            sensor_readings: sensor_stream_tx,
-            node_status: node_state_tx,
+            sensor_readings: db_stream_tx,
+            node_status: db_state_tx,
         })
         .await
         .map_err(|e| {
-            log::error!("Error sending client subscribe request {e:}");
+            log::error!("Error sending database subscribe request {e:}");
             e
         })??;
 

@@ -5,16 +5,20 @@ edition = "2021"
 authors = ["nand-nor <a13xandra.cliff0rd@gmail.com>"]
 
 [dependencies]
-tokio = {version = "1.37.0", features=["rt-multi-thread", "rt", "macros", "time", "sync"] }
-async-trait = {version = "0.1.8"}
+tokio = {version = "1.37.0", features=["full"]}
 actix = {version = "0.13.5", features=["macros"]}
-coap-lite = {version="0.12.0", features=["udp"]}
-ipnet = "2.9.0"
 thiserror = {version="1.0.59"}
 log = {version= "0.4.21"}
 futures = "0.3.30"
-rusqlite = { version = "0.31.0", features = ["bundled"] }
 pmindp-sensor = {  path="../pmindp-sensor", features=["std"]}
+pmind-broker = {  path="../pmind-broker"}
 tokio-stream = "0.1.15"
 chrono = {version="0.4.38"}
 serde_json = {version = "1.0"}
+diesel = {version = "2.2.3", features=["sqlite", "chrono", "returning_clauses_for_sqlite_3_35", "numeric"]}
+diesel_migrations = "2.2.0"
+tracing = "0.1.40"
+tracing-log = "0.2.0"
+async-trait = {version = "0.1.81"}
+serde = {version="1.0", default-features=false, features = ["derive"] }
+libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }

@@ -7,7 +7,8 @@ pub mod event;
 pub mod minder;
 pub mod ui;
 
-use pmindb::BrokerCoordinatorError;
+use pmind_broker::BrokerError;
+use pmindb::DatabaseError;
 
 use thiserror::Error;
 
@@ -16,7 +17,9 @@ pub enum PlantMinderError {
     #[error("I/O Error")]
     Io(#[from] std::io::Error),
     #[error("Broker Error")]
-    BrokerError(#[from] BrokerCoordinatorError),
+    BrokerError(#[from] BrokerError),
     #[error("Event Handling Error")]
     EventError,
+    #[error("Database Error")]
+    DatabaseError(#[from] DatabaseError),
 }

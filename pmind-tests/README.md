@@ -1,14 +1,14 @@
 # Tests
 
-Some binaries for testing broker layer with Thread mesh, via the `broker-mesh-test` binary
+Bianry for testing broker layer with Thread mesh, via the `broker-mesh-test` binary.
+
+TODO: more hardware-in-the-loop tests!
 
 ## Build 
-To build the current `broker-mesh-test` test bin, use the following:
+To build the current `broker-mesh-test` test bin for rpi5, use the following:
 ```
 cargo build --target=aarch64-unknown-linux-gnu --bin broker-mesh-test --release
 ```
-
-For older versions like 3b+ use the `armv7-unknown-linux-gnueabihf` target and point to the appropriate toolchain with the needed rustc linker flag. 
 
 #### Tip: 
 If you are not familiar with building code for remote targets and/or run into (& dont want to deal with) issues with missing/incompatible library versions, you can clone this repo and build it on target (on the pi). That way you wont need to worry about specifying the target or linking against the correct version of glibc etc. Otherwise if you dont want to do this make sure you have all the needed toolchains and targets installed and that your gcc toolchain is at the same path specified in this crate's `.cargo/config.toml` file

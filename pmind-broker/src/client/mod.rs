@@ -1,6 +1,7 @@
-/// Mod for different impls for interfacing with otbr-agent
-/// currently only ot-ctl is implemented, soon to implement
-/// something safer like DBus
+//! Mod for different impls for interfacing with otbr-agent
+//! currently only ot-ctl is implemented, soon to implement
+//! something safer like DBus
+
 mod cli;
 use crate::Rloc;
 pub use cli::OtCliClient;

@@ -5,19 +5,15 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use pmindb::{NodeEvent, NodeSensorReading, Registration};
+use pmind_broker::{NodeSensorReading, NodeStatus};
 
-use crate::{
-    minder::{PlantMinder, PlantMinderResult, NUM_TABS},
-    PlantMinderError,
-};
+use crate::{minder::PlantMinderResult, PlantMinderError};
 
 /// Backend event
 pub enum Event {
     Tick,
     AppCmd(AppCmd),
-    NodeRegistration(Registration),
-    SensorNodeEvent(UnboundedReceiver<NodeEvent>),
+    NodeState(NodeStatus),
 }
 
 /// App command is derived
@@ -44,15 +40,16 @@ pub struct EventHandler {
 impl EventHandler {
     pub fn new(
         tick_rate: u64,
-        node_data_rx: UnboundedReceiver<UnboundedReceiver<NodeEvent>>,
-        node_reg_rx: UnboundedReceiver<Registration>,
+        node_data_rx: UnboundedReceiver<NodeSensorReading>,
+        node_state_rx: UnboundedReceiver<NodeStatus>,
+        client_data_tx: UnboundedSender<NodeSensorReading>,
     ) -> Self {
         let tick_rate = Duration::from_secs(tick_rate);
         let (sender, receiver) = mpsc::unbounded_channel();
         let _sender = sender.clone();
 
-        let mut node_event_stream = UnboundedReceiverStream::new(node_data_rx);
-        let mut node_reg_stream = UnboundedReceiverStream::new(node_reg_rx);
+        let mut node_data_stream = UnboundedReceiverStream::new(node_data_rx);
+        let mut node_state_stream = UnboundedReceiverStream::new(node_state_rx);
 
         let handler = tokio::spawn(async move {
             let mut reader = crossterm::event::EventStream::new();
@@ -61,8 +58,9 @@ impl EventHandler {
             loop {
                 let tick_delay = tick.tick();
                 let crossterm_event = reader.next().fuse();
-                let node_event_stream = node_event_stream.next().fuse();
-                let node_reg_stream = node_reg_stream.next().fuse();
+
+                let node_data_stream = node_data_stream.next().fuse();
+                let node_state_stream = node_state_stream.next().fuse();
 
                 tokio::select! {
                   _ = _sender.closed() => {
@@ -103,17 +101,14 @@ impl EventHandler {
                       }
                     }
                   }
-                 Some(node_evt) = node_event_stream => {
-                    log::debug!("node event {node_evt:?}");
-                    _sender.send(Event::SensorNodeEvent(node_evt)).unwrap();
-
+                 Some(state) = node_state_stream => {
+                    log::debug!("Node state event {state:?}");
+                    _sender.send(Event::NodeState(state)).unwrap();
                   }
-                  Some(reg) = node_reg_stream => {
-                    log::debug!("Node registration {reg:?}");
-                    _sender.send(Event::NodeRegistration(reg)).unwrap();
-
+                  Some(data) = node_data_stream => {
+                    log::debug!("Node data event {data:?}");
+                    client_data_tx.send(data).unwrap();
                   }
-
                 };
             }
         });
@@ -130,90 +125,4 @@ impl EventHandler {
             .await
             .ok_or(PlantMinderError::EventError)
     }
-}
-
-pub async fn handle_app_cmd(cmd: AppCmd, app: &mut PlantMinder) {
-    match cmd {
-        AppCmd::Quit => app.quit(),
-        AppCmd::Next => {
-            if app.tab == NUM_TABS - 1 {
-                app.tab = 0;
-            } else {
-                app.tab += 1;
-            }
-        }
-        AppCmd::Back => {
-            if app.tab == 0 {
-                app.tab = NUM_TABS - 1;
-            } else {
-                app.tab -= 1;
-            }
-        }
-        AppCmd::Down => {
-            app.row += 1;
-        }
-        AppCmd::Up => {
-            if app.row == 0 {
-                if !app.node_addrs.is_empty() {
-                    app.row = app.node_addrs.len() - 1;
-                } else {
-                    app.row = 0;
-                }
-            } else {
-                app.row -= 1;
-            }
-        }
-        e => {
-            log::debug!("Unimplemented event received {e:?}");
-            // drop it for now
-        }
-    }
-}
-
-pub async fn handle_sensor_stream_task(app: &mut PlantMinder, rcv: UnboundedReceiver<NodeEvent>) {
-    let data_queue = app.data_queue.clone();
-    let handle = tokio::spawn(async move {
-        tokio::spawn(async move {
-            sensor_stream_process(UnboundedReceiverStream::new(rcv), data_queue).await
-        });
-    });
-    app.sensor_streams.push(handle);
-}
-
-async fn sensor_stream_process(
-    mut stream: UnboundedReceiverStream<NodeEvent>,
-    sender: UnboundedSender<NodeSensorReading>,
-    // sender: UnboundedSender<NodeSensorReading>,
-) {
-    log::trace!("Processing NodeEvent receiver as a stream");
-    while let Some(msg) = stream.next().await {
-        let sender_clone = sender.clone();
-        match msg {
-            NodeEvent::NodeTimeout(addr) => {
-                log::warn!("Node {:?} timed out, closing receiver stream", addr);
-            }
-            NodeEvent::SensorReading(node) => {
-                log::debug!(
-                    "Node event: sensor reading! from {:?} data {:?}",
-                    node.addr,
-                    node.data
-                );
-
-                if let Err(e) = sender_clone.send(node) {
-                    log::error!("Error sending to app {e:}");
-                }
-            }
-            NodeEvent::SocketError(addr) => {
-                log::warn!("Socket error on addr {:?}, closing receiver stream", addr);
-            }
-            event => {
-                log::warn!("Setup error {event:?}, closing receiver stream");
-            }
-        }
-    }
-    log::warn!("Stream processing func closing");
-}
-
-pub async fn handle_node_reg_task(app: &mut PlantMinder, reg: Registration) {
-    app.node_registration(reg).await;
 }
