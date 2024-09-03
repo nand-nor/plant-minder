@@ -1,4 +1,4 @@
-/// [Seesaw soil sensor](https://www.adafruit.com/product/4026)
+//! [Seesaw soil sensor](https://www.adafruit.com/product/4026)
 use embedded_hal::i2c::I2c;
 use esp_hal::delay::Delay;
 use pmindp_sensor::{MoistureSensor, PlatformSensorError, Sensor, SoilSensorError, TempSensor};
@@ -97,10 +97,7 @@ where
         let moisture = self.moisture().map_err(SoilSensorError::from)?;
         log::debug!("moisture {:?}", moisture);
 
-        let reading: pmindp_sensor::Soil = pmindp_sensor::Soil {
-            moisture,
-            temp,
-        };
+        let reading: pmindp_sensor::Soil = pmindp_sensor::Soil { moisture, temp };
 
         let reading = serde_json::to_vec(&reading).map_err(|e| {
             log::error!("Serde failed {e:}");

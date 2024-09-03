@@ -4,14 +4,14 @@ TUI Front end is a work in progress!
 
 # Build 
 
-For building for an RPI 5 running raspbian kernel release `6.1.0-rpi7-rpi-2712` / kernel version `#1 SMP PREEMPT Debian 1:6.1.63-1+rpt1 (2023-11-24)`, I am using rust target `aarch64-unknown-linux-gnu`, and have separately installed the `aarch64-linux-gnu-gcc` toolchain (version 11.4.0), building on Ubuntu. 
+For building for an RPi 5 running raspbian kernel release `6.1.0-rpi7-rpi-2712` / kernel version `#1 SMP PREEMPT Debian 1:6.1.63-1+rpt1 (2023-11-24)`, I am using rust target `aarch64-unknown-linux-gnu`, and have separately installed the `aarch64-linux-gnu-gcc` toolchain (version 11.4.0), building on Ubuntu. 
 
 To build the current `plant-minder` example bin, use the following:
 ```
 cargo build --target=aarch64-unknown-linux-gnu --bin plant-minder --release
 ```
 
-For older versions of the rpi you may need to use a different target (like `armv7-unknown-linux-gnueabihf`) and the appropriate gcc toolchain. Make sure that your gcc toolchain is at the same path specified in this crate's `.cargo/config.toml` file, or modify the config file according to your needs. 
+For older versions of the RPi you may need to use a different target (like `armv7-unknown-linux-gnueabihf`) and the appropriate gcc toolchain. Make sure that your gcc toolchain is at the same path specified in this crate's `.cargo/config.toml` file, or modify the config file according to your needs. 
 
 # Current working state
  

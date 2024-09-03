@@ -1,6 +1,6 @@
-/// Spark fun soil moisture sensor
-/// uses a simple probe circuit
-/// https://cdn.sparkfun.com/datasheets/Sensors/Biometric/SparkFun_Soil_Moisture_Sensor.p
+//! Spark fun soil moisture sensor
+//! uses a simple probe circuit
+//! https://cdn.sparkfun.com/datasheets/Sensors/Biometric/SparkFun_Soil_Moisture_Sensor.p
 use esp_hal::{
     analog::adc::{Adc, AdcConfig, AdcPin, Attenuation},
     delay::Delay,

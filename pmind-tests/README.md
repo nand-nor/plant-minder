@@ -5,7 +5,7 @@ Bianry for testing broker layer with Thread mesh, via the `broker-mesh-test` bin
 TODO: more hardware-in-the-loop tests!
 
 ## Build 
-To build the current `broker-mesh-test` test bin for rpi5, use the following:
+To build the current `broker-mesh-test` test bin for RPi5, use the following:
 ```
 cargo build --target=aarch64-unknown-linux-gnu --bin broker-mesh-test --release
 ```

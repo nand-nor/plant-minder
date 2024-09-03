@@ -1,6 +1,5 @@
-#![allow(unused)]
-/// TSL2951 light sensor
-/// port of https://github.com/adafruit/Adafruit_TSL2591_Library
+//! TSL2951 light sensor
+//! port of https://github.com/adafruit/Adafruit_TSL2591_Library
 use embedded_hal::i2c::I2c;
 
 use core::ops::{BitAnd, BitOr, Shl, Shr};
@@ -471,7 +470,8 @@ where
     fn read(&mut self, buffer: &mut [u8], start: usize) -> Result<usize, PlatformSensorError> {
         if self.fault_count_threshold() {
             log::warn!("Adjusting for consistent light sensor failures before attempting read");
-            self.adjust_for_current_light().map_err(LightSensorError::from)?;
+            self.adjust_for_current_light()
+                .map_err(LightSensorError::from)?;
         }
         let fs = self
             .get_luminosity(Mode::FullSpectrum)
@@ -481,8 +481,7 @@ where
         let lux = self.get_lux().map_err(LightSensorError::from)?;
         log::debug!("lux {:?}", lux);
 
-        let reading: pmindp_sensor::Light =
-            pmindp_sensor::Light { lux, fs };
+        let reading: pmindp_sensor::Light = pmindp_sensor::Light { lux, fs };
 
         let reading = serde_json::to_vec(&reading).map_err(|e| {
             log::error!("Serde failed {e:}");

@@ -30,10 +30,9 @@ pub trait PlantMinderDatabase {
         timestamp: NaiveDateTime,
     ) -> Result<Vec<NodeSensorReading>, DatabaseError>;
 
-    /// Get all available sensor data for the [`pmind_broker::Eui`] 
+    /// Get all available sensor data for the [`pmind_broker::Eui`]
     /// in the stored database
     async fn get_full_history(&self, eui: Eui) -> Result<Vec<NodeSensorReading>, DatabaseError>;
-    
 }
 
 #[async_trait::async_trait]
