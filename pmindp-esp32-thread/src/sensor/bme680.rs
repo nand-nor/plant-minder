@@ -1,6 +1,5 @@
-/// bme680 temperature / humidity / pressure / gas
-/// sensor from adafruit
-
+//! bme680 temperature / humidity / pressure / gas
+//! sensor from adafruit
 use bme680::*;
 use embedded_hal::i2c::I2c;
 use esp_hal::delay::Delay;
@@ -68,12 +67,7 @@ where
                 PlatformSensorError::Other
             })?;
 
-        Ok(Gas {
-            temp,
-            p,
-            h,
-            gas,
-        })
+        Ok(Gas { temp, p, h, gas })
     }
 }
 

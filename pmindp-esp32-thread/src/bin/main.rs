@@ -11,7 +11,10 @@ use esp_hal::{
     peripherals::Peripherals,
     prelude::*,
     system::SystemControl,
-    timer::{systimer::{SystemTimer, Alarm, FrozenUnit, SpecificUnit}, timg::TimerGroup},
+    timer::{
+        systimer::{Alarm, FrozenUnit, SpecificUnit, SystemTimer},
+        timg::TimerGroup,
+    },
 };
 
 extern crate alloc;
@@ -23,7 +26,7 @@ use static_cell::StaticCell;
 use esp_hal::gpio::{Level, Output};
 
 use esp_println::println;
-use pmindp_esp32_thread::{SensorVec, init_heap};
+use pmindp_esp32_thread::{init_heap, SensorVec};
 
 use esp_ieee802154::Ieee802154;
 
@@ -69,8 +72,7 @@ fn main() -> ! {
     let i2c_ref_cell = RefCell::new(i2c);
     let i2c_ref_cell: &'static _ = Box::leak(Box::new(i2c_ref_cell));
 
-    let mut sensors: SensorVec =
-        (0..pmindp_sensor::MAX_SENSORS).map(|_| None).collect();
+    let mut sensors: SensorVec = (0..pmindp_sensor::MAX_SENSORS).map(|_| None).collect();
 
     // Require at least a moisture sensor
     cfg_if::cfg_if! {
@@ -102,7 +104,7 @@ fn main() -> ! {
         }
     }
 
-    // enable optional light sensor configuration
+    // enable optional light sensor configuration (if one is specified)
     cfg_if::cfg_if! {
         if #[cfg(feature="tsl2591")] {
             let light_sensor = pmindp_esp32_thread::TSL2591::new(
@@ -114,10 +116,16 @@ fn main() -> ! {
         }
     }
 
-    // enable humidity/gas sensor configuration
+    // enable humidity/gas sensor configuration (if one is specified)
     cfg_if::cfg_if! {
         if #[cfg(feature="bme680")] {
             let gas_sensor = pmindp_esp32_thread::BME680::new(
+                i2c::RefCellDevice::new(i2c_ref_cell),
+                Delay::new(&clocks)
+            ).unwrap();
+            sensors.insert(pmindp_sensor::HUM_IDX, Some(Mutex::new(RefCell::new(Box::new(gas_sensor)))));
+        } else if #[cfg(feature="sht40")] {
+            let gas_sensor = pmindp_esp32_thread::SHT40::new(
                 i2c::RefCellDevice::new(i2c_ref_cell),
                 Delay::new(&clocks)
             ).unwrap();

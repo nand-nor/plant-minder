@@ -1,14 +1,14 @@
 use core::pin::pin;
-use esp_hal_smartled::SmartLedsAdapter;
 use esp_hal::{reset::software_reset_cpu, rmt::Channel, Blocking};
+use esp_hal_smartled::SmartLedsAdapter;
 use esp_ieee802154::Config;
 use esp_openthread::{
     NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadTimestamp,
 };
 
 use coap_lite::{CoapRequest, Packet};
-use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 use pmindp_sensor::{PlatformSensorError, SensorPlatform};
+use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
 use crate::{SensorVec, SENSOR_TIMER_FIRED};
 
@@ -159,7 +159,7 @@ where
                         let path = request.get_path();
                         // TODO ! Need better solution
                         let port_req = request.message.header.message_id;
-                        
+
                         log::info!(
                             "Received CoAP request '{} {:?} {}' from {}",
                             port_req,
@@ -181,7 +181,12 @@ where
                             self.openthread.ipv6_get_unicast_addresses();
                         print_all_addresses(addrs);
 
-                        log::info!("Eui {:#X?} Plant Name {:?} Port {:?}", eui, plant_name, port_req);
+                        log::info!(
+                            "Eui {:#X?} Plant Name {:?} Port {:?}",
+                            eui,
+                            plant_name,
+                            port_req
+                        );
 
                         drop(packet);
 

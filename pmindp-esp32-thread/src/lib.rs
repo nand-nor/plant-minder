@@ -20,7 +20,11 @@
         any(feature = "atsamd10", feature = "st0160")
     )
 ))]
-compile_error!("Cannot set multiple probe types!");
+compile_error!("Cannot set multiple soil sensor types!");
+
+// Compile time checks to prevent building with multiple gas sensors
+#[cfg(all(feature = "bme680", feature = "sht40"))]
+compile_error!("Cannot set multiple gas sensor types");
 
 #[cfg(all(feature = "esp32h2", feature = "probe-circuit"))]
 compile_error!("esp32h2 does not support the features neded to run the probe-circuit sensor");
@@ -32,7 +36,7 @@ mod sensor;
 
 pub use crate::{
     platform::Esp32Platform,
-    sensor::{ATSAMD10, BME680, TSL2591},
+    sensor::{ATSAMD10, BME680, SHT40, TSL2591},
 };
 
 #[cfg(not(feature = "esp32h2"))]
@@ -41,7 +45,6 @@ pub use crate::sensor::ProbeCircuit;
 use core::{cell::RefCell, ptr::addr_of_mut};
 use critical_section::Mutex;
 use esp_hal::{
-    Blocking,
     clock::Clocks,
     gpio::GpioPin,
     interrupt::{self, Priority},
@@ -53,6 +56,7 @@ use esp_hal::{
     rng::Rng,
     timer::systimer::{Alarm, SpecificComparator, SpecificUnit, Target},
     timer::timg::{Timer, Timer0, TimerGroup},
+    Blocking,
 };
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_ieee802154::Ieee802154;
@@ -88,12 +92,12 @@ pub fn init<'a>(
     ieee802154: &'a mut Ieee802154,
     clocks: &Clocks,
     timer: Alarm<
-            'static,
-            Target,
-            Blocking,
-            SpecificComparator<'static, 0>,
-            SpecificUnit<'static, 0>,
-        >,
+        'static,
+        Target,
+        Blocking,
+        SpecificComparator<'static, 0>,
+        SpecificUnit<'static, 0>,
+    >,
     timg0: TimerGroup<TIMG0, Blocking>,
     rmt: impl Peripheral<P = RMT> + 'a,
     led_pin: GpioPin<8>,
