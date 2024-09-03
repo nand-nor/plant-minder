@@ -42,10 +42,9 @@ pub use crate::{
 #[cfg(not(feature = "esp32h2"))]
 pub use crate::sensor::ProbeCircuit;
 
-use core::{cell::RefCell, ptr::addr_of_mut};
+use core::cell::RefCell;
 use critical_section::Mutex;
 use esp_hal::{
-    clock::Clocks,
     gpio::GpioPin,
     interrupt::{self, Priority},
     peripheral::Peripheral,
@@ -65,13 +64,17 @@ use pmindp_sensor::{Sensor, SensorPlatform};
 
 use alloc::{boxed::Box, vec::Vec};
 
-#[global_allocator]
-static ALLOC: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
+use esp_alloc as _;
+
+//#[global_allocator]
+//static ALLOC: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 pub fn init_heap() {
-    const SIZE: usize = 32768;
-    static mut HEAP: [u8; SIZE] = [0; SIZE];
-    unsafe { ALLOC.init(addr_of_mut!(HEAP) as *mut u8, SIZE) }
+    //const SIZE: usize = 32768;
+    //static mut HEAP: [u8; SIZE] = [0; SIZE];
+    //unsafe { ALLOC.init(addr_of_mut!(HEAP) as *mut u8, SIZE) }
+
+    esp_alloc::heap_allocator!(32768);
 }
 
 pub type SensorVec = Vec<Option<Mutex<RefCell<Box<dyn Sensor>>>>>;
@@ -90,7 +93,6 @@ static SENSOR_TIMER_FIRED: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false)
 #[allow(clippy::too_many_arguments)]
 pub fn init<'a>(
     ieee802154: &'a mut Ieee802154,
-    clocks: &Clocks,
     timer: Alarm<
         'static,
         Target,
@@ -109,12 +111,12 @@ where
 {
     let openthread = esp_openthread::OpenThread::new(ieee802154, timer, Rng::new(rng));
     #[cfg(not(feature = "esp32h2"))]
-    let rmt = Rmt::new(rmt, 80.MHz(), clocks).unwrap();
+    let rmt = Rmt::new(rmt, 80.MHz()).unwrap();
     #[cfg(feature = "esp32h2")]
-    let rmt = Rmt::new(rmt, 32.MHz(), &clocks).unwrap();
+    let rmt = Rmt::new(rmt, 32.MHz()).unwrap();
 
     let rmt_buffer = smartLedBuffer!(1);
-    let led = SmartLedsAdapter::new(rmt.channel0, led_pin, rmt_buffer, clocks);
+    let led = SmartLedsAdapter::new(rmt.channel0, led_pin, rmt_buffer);
 
     let timer = timg0.timer0;
     setup_sensor_timer(timer, 25000);

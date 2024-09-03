@@ -1,4 +1,4 @@
-use core::pin::pin;
+use core::{cell::RefCell, pin::pin};
 use esp_hal::{reset::software_reset_cpu, rmt::Channel, Blocking};
 use esp_hal_smartled::SmartLedsAdapter;
 use esp_ieee802154::Config;
@@ -6,7 +6,16 @@ use esp_openthread::{
     NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadTimestamp,
 };
 
+use critical_section::Mutex;
+
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+};
+
 use coap_lite::{CoapRequest, Packet};
+use esp_openthread::ChangedFlags;
 use pmindp_sensor::{PlatformSensorError, SensorPlatform};
 use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
@@ -17,6 +26,10 @@ use crate::{SensorVec, SENSOR_TIMER_FIRED};
 // also do that for any other constants that both
 // sender and receiver need to know
 pub const BOUND_PORT: u16 = 1212;
+
+static CHANGED: Mutex<RefCell<(bool, ChangedFlags)>> =
+    Mutex::new(RefCell::new((false, ChangedFlags::Ipv6AddressAdded)));
+static HOSTNAME: Mutex<RefCell<&str>> = Mutex::new(RefCell::new("ot-service"));
 
 pub struct Esp32Platform<'a> {
     led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
@@ -60,6 +73,18 @@ where
             })
             .unwrap();
 
+        let change_callback = |flags| {
+            critical_section::with(|cs| *CHANGED.borrow_ref_mut(cs) = (true, flags));
+        };
+
+        let callback: &'static mut (dyn FnMut(ChangedFlags) + Send) = Box::leak(Box::new(change_callback));
+
+        self.openthread.set_change_callback(Some(callback));
+
+        if let Err(e) = self.openthread.setup_srp_client_autostart(None) {
+            log::error!("Error enabling srp client {e:?}");
+        }
+
         let dataset = OperationalDataset {
             active_timestamp: Some(ThreadTimestamp {
                 seconds: 1,
@@ -75,13 +100,14 @@ where
             pan_id: Some(0x58d1),
             channel: Some(25),
             channel_mask: Some(0x07fff800),
-
             ..OperationalDataset::default()
         };
+
         log::debug!("Programmed child device with dataset : {:?}", dataset);
 
         self.openthread.set_active_dataset(dataset).unwrap();
-        self.openthread.set_child_timeout(60).unwrap();
+    
+        self.openthread.set_child_timeout(240);
         self.openthread.ipv6_set_enabled(true).unwrap();
         self.openthread.thread_set_enabled(true).unwrap();
 
@@ -89,6 +115,83 @@ where
 
         let mut data;
         let mut eui: [u8; 6] = [0u8; 6];
+
+        let mut register = false;
+
+        loop {
+            self.openthread.process();
+            self.openthread.run_tasklets();
+            critical_section::with(|cs| {
+                let mut c = CHANGED.borrow_ref_mut(cs);
+                if c.0 {
+                    if c.1.contains(ChangedFlags::ThreadRlocAdded) {
+                        log::info!("Attached to network, can now register SRP service");
+                        register = true;
+                    }
+                    c.0 = false;
+                }
+            });
+
+            if register {
+                let mut base: String = String::from(pmindp_sensor::PLANT_CONFIG.name);
+                self.openthread.get_eui(&mut eui);
+                let rand = esp_openthread::get_random_u32();
+                //let rand_b = rand.to_le_bytes();
+                let mut eui_num: u64 = u32::from_be_bytes([
+                    eui[0], eui[1], eui[2], eui[3],
+                ]) as u64;
+                eui_num += rand as u64;
+
+                // Add some random bytes so host name and instance name are "unique"
+                // even if this node resets itself
+                let rando = eui_num.to_string();
+                base.push_str(&rando.clone());
+                // probably needs to be null terminated
+                base.push_str("\0");
+                let host_name: &'static str = Box::leak(Box::new(base.to_owned()));
+
+                // hostname passed to OpenThread must be valid pointer for the lifetime of the
+                // program
+                critical_section::with(|cs| {
+                    *HOSTNAME.borrow_ref_mut(cs) = host_name;
+                    if let Err(e) = self
+                        .openthread
+                        .setup_srp_client_set_hostname(*HOSTNAME.borrow_ref(cs))
+                    {
+                        log::error!("Error enabling srp client {e:?}");
+                    }
+                });
+
+
+                if let Err(e) = self.openthread.setup_srp_client_host_addr_autoconfig() {
+                    log::error!("Error enabling srp client {e:?}");
+                }
+
+                let mut base: String = rando;
+                base.push_str("-soil-srvc");
+                base.push_str("\0");
+
+                let service_name: &'a str = Box::leak(Box::new(base.to_owned()));
+                log::info!("Registering host name {:?} service name {:?}", host_name, service_name);
+
+                let instance_name: &'a str = Box::leak(Box::new("_soil._tcp"));
+
+                if let Err(e) = self.openthread.register_service_with_srp_client(
+                    service_name,
+                    instance_name,
+                    &[],
+                    "",
+                    12345,
+                    None,
+                    None,
+                    Some(7200),
+                    Some(680400),
+                ) {
+                    log::error!("Error registering service {e:?}");
+                }
+                break;
+            }
+        }
 
         let mut observer_addr: Option<(no_std_net::Ipv6Addr, u16)> = None;
         // This block is needed to constrain how long the immutable borrow of openthread,
@@ -129,6 +232,7 @@ where
                                         // node from sending data until success is better guaranteed
                                         log::error!("Error sending, resetting due to {e:?}");
                                         socket.close().ok();
+
                                         break;
                                     } else {
                                         data = [colors::MISTY_ROSE];
@@ -213,8 +317,16 @@ where
             }
         }
         log::error!("Socket error, most likely node has dropped from the network");
-        self.openthread.thread_set_enabled(false).unwrap();
-        Err(Esp32PlatformError::PlatformError)
+
+        let counters = self.openthread.get_link_counters();
+        log::error!("LINK COUNTERS {counters:?}");
+
+        if let Err(e) = self.openthread.search_for_better_parent() {
+            log::error!("Unable to trigger search for better parent {e:?}");
+        }
+        //self.openthread.thread_set_enabled(false).unwrap();
+        //Err(Esp32PlatformError::PlatformError)
+        panic!();
     }
 
     pub fn reset(&mut self) {

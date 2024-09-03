@@ -2,7 +2,7 @@
 //! port of https://github.com/adafruit/Adafruit_TSL2591_Library
 use embedded_hal::i2c::I2c;
 
-use core::ops::{BitAnd, BitOr, Shl, Shr};
+use core::ops::{BitAnd, Shr};
 use esp_hal::delay::Delay;
 use pmindp_sensor::{
     I2cError, LightLumenSensor, LightLuxSensor, LightSensorError, PlatformSensorError, Sensor,
