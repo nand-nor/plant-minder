@@ -21,15 +21,13 @@ use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
 use crate::{SensorVec, SENSOR_TIMER_FIRED};
 
-// TODO put this in pmindp-sensor so other crates in
-// workspace can access this
-// also do that for any other constants that both
-// sender and receiver need to know
-pub const BOUND_PORT: u16 = 1212;
-
 static CHANGED: Mutex<RefCell<(bool, ChangedFlags)>> =
     Mutex::new(RefCell::new((false, ChangedFlags::Ipv6AddressAdded)));
-static HOSTNAME: Mutex<RefCell<&str>> = Mutex::new(RefCell::new("ot-service"));
+static HOSTNAME: Mutex<RefCell<&'static str>> = Mutex::new(RefCell::new(""));
+static SERVICENAME: Mutex<RefCell<&'static str>> = Mutex::new(RefCell::new(""));
+static INSTANCENAME: Mutex<RefCell<&'static str>> = Mutex::new(RefCell::new(""));
+static DNSTXT: Mutex<RefCell<&'static str>> = Mutex::new(RefCell::new(""));
+static SUBTYPES: Mutex<RefCell<&'static [&'static str]>> = Mutex::new(RefCell::new(&[]));
 
 pub struct Esp32Platform<'a> {
     led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
@@ -41,6 +39,7 @@ pub enum Esp32PlatformError {
     SensorError,
     PlatformError,
     PeripheralError,
+    SrpServiceRegError,
     OtherError,
 }
 
@@ -60,24 +59,25 @@ where
         }
     }
 
-    pub fn coap_server_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
-        self.openthread
-            .set_radio_config(Config {
-                auto_ack_tx: true,
-                auto_ack_rx: true,
-                promiscuous: false,
-                rx_when_idle: false,
-                txpower: 18, // 18 txpower is legal for North America
-                channel: 25, // match the dataset
-                ..Config::default()
-            })
-            .unwrap();
+    fn ot_setup(&mut self) -> Result<(), Esp32PlatformError> {
+         //self.openthread
+        //    .set_radio_config(Config {
+        //        auto_ack_tx: true,
+        //        auto_ack_rx: true,
+        //        promiscuous: false,
+        //        rx_when_idle: false,
+        //        txpower: pmindp_sensor::PLANT_CONFIG.ot_tx_power, // 18 txpower is legal for North America
+        //        channel: pmindp_sensor::PLANT_CONFIG.ot_channel,  // match the dataset
+        //        ..Config::default()
+        //    })
+        //    .unwrap();
 
         let change_callback = |flags| {
             critical_section::with(|cs| *CHANGED.borrow_ref_mut(cs) = (true, flags));
         };
 
-        let callback: &'static mut (dyn FnMut(ChangedFlags) + Send) = Box::leak(Box::new(change_callback));
+        let callback: &'static mut (dyn FnMut(ChangedFlags) + Send) =
+            Box::leak(Box::new(change_callback));
 
         self.openthread.set_change_callback(Some(callback));
 
@@ -91,30 +91,73 @@ where
                 ticks: 0,
                 authoritative: false,
             }),
-            network_key: Some([
-                0xfe, 0x04, 0x58, 0xf7, 0xdb, 0x96, 0x35, 0x4e, 0xaa, 0x60, 0x41, 0xb8, 0x80, 0xea,
-                0x9c, 0x0f,
-            ]),
-            network_name: Some("OpenThread-58d1".try_into().unwrap()),
-            extended_pan_id: Some([0x3a, 0x90, 0xe3, 0xa3, 0x19, 0xa9, 0x04, 0x94]),
-            pan_id: Some(0x58d1),
-            channel: Some(25),
-            channel_mask: Some(0x07fff800),
+            network_key: Some(pmindp_sensor::PLANT_CONFIG.ot_network_key),
+            network_name: Some(
+                pmindp_sensor::PLANT_CONFIG
+                    .ot_network_name
+                    .try_into()
+                    .unwrap(),
+            ),
+            extended_pan_id: Some(pmindp_sensor::PLANT_CONFIG.ot_ext_pan_id),
+            pan_id: Some(pmindp_sensor::PLANT_CONFIG.ot_pan_id),
+            channel: Some(pmindp_sensor::PLANT_CONFIG.ot_channel as u16),
+            channel_mask: Some(pmindp_sensor::PLANT_CONFIG.ot_channel_mask),
             ..OperationalDataset::default()
         };
 
         log::debug!("Programmed child device with dataset : {:?}", dataset);
 
         self.openthread.set_active_dataset(dataset).unwrap();
-    
-        self.openthread.set_child_timeout(240);
+        let mut eui: [u8; 6] = [0u8; 6];
+        //self.openthread
+        //    .set_child_timeout(pmindp_sensor::PLANT_CONFIG.ot_child_timeout);
+
+        
+            let mut base: String = String::from(pmindp_sensor::PLANT_CONFIG.name);
+            self.openthread.get_eui(&mut eui);
+            let rand = esp_openthread::get_random_u32();
+            let mut eui_num: u64 = u32::from_be_bytes([eui[0], eui[1], eui[2], eui[3]]) as u64;
+            eui_num += rand as u64;
+
+            // Add some random bytes so host name and instance name are "unique"
+            // even if this node resets itself
+            let rando = eui_num.to_string();
+            base.push_str(&rando.clone());
+            base.push_str("\0");
+
+            // hostname passed to OpenThread must be valid pointer for the lifetime of the
+            // program
+            let host_name: &'static str = Box::leak(Box::new(base.to_owned()));
+
+
+            let mut base: String = rando;
+            base.push_str(pmindp_sensor::PLANT_CONFIG.srp_service_base);
+
+            // all cstrings passed to OpenThread to populate the service instance
+            // must be valid for the lifetime of the program, so leak them
+            let service_name: &'static str = Box::leak(Box::new(base.to_owned()));
+            let instance_name: &'static str =
+                Box::leak(Box::new(pmindp_sensor::PLANT_CONFIG.srp_instance));
+          
+                critical_section::with(|cs| {
+                    *HOSTNAME.borrow_ref_mut(cs) = host_name;
+                    *SERVICENAME.borrow_ref_mut(cs) = service_name;
+                    *INSTANCENAME.borrow_ref_mut(cs) = instance_name;
+                    if let Err(e) = self
+                        .openthread
+                        .setup_srp_client_set_hostname(*HOSTNAME.borrow_ref(cs))
+                    {
+                        log::error!("Error enabling srp client {e:?}");
+                    }
+                });
+
+                if let Err(e) = self.openthread.setup_srp_client_host_addr_autoconfig() {
+                    log::error!("Error enabling srp client {e:?}");
+                }
+
         self.openthread.ipv6_set_enabled(true).unwrap();
         self.openthread.thread_set_enabled(true).unwrap();
 
-        let mut buffer = [0u8; 512];
-
-        let mut data;
-        let mut eui: [u8; 6] = [0u8; 6];
 
         let mut register = false;
 
@@ -133,65 +176,67 @@ where
             });
 
             if register {
-                let mut base: String = String::from(pmindp_sensor::PLANT_CONFIG.name);
-                self.openthread.get_eui(&mut eui);
-                let rand = esp_openthread::get_random_u32();
-                //let rand_b = rand.to_le_bytes();
-                let mut eui_num: u64 = u32::from_be_bytes([
-                    eui[0], eui[1], eui[2], eui[3],
-                ]) as u64;
-                eui_num += rand as u64;
+             //   let unregister = critical_section::with(|cs| !HOSTNAME.borrow_ref(cs).is_empty());
 
-                // Add some random bytes so host name and instance name are "unique"
-                // even if this node resets itself
-                let rando = eui_num.to_string();
-                base.push_str(&rando.clone());
-                // probably needs to be null terminated
-                base.push_str("\0");
-                let host_name: &'static str = Box::leak(Box::new(base.to_owned()));
+            //    if unregister {
+            //        log::info!("Unregistering...");
+            //        if let Err(e) = self.openthread.srp_unregister_all_services(true, true) {
+            //            log::error!("Failure to unregister all services {e:?}");
+            //            return Err(Esp32PlatformError::SrpServiceRegError);
+             //       }
+             //       self.openthread.clear_srp_client_host_buffers();
+            //    }
 
-                // hostname passed to OpenThread must be valid pointer for the lifetime of the
-                // program
+                log::info!(
+                    "Registering host name {:?} service name {:?} instance {:?}",
+                    host_name,
+                    service_name,
+                    instance_name
+                );
+    
                 critical_section::with(|cs| {
-                    *HOSTNAME.borrow_ref_mut(cs) = host_name;
-                    if let Err(e) = self
-                        .openthread
-                        .setup_srp_client_set_hostname(*HOSTNAME.borrow_ref(cs))
-                    {
-                        log::error!("Error enabling srp client {e:?}");
+                    if let Err(e) = self.openthread.register_service_with_srp_client(
+                        *SERVICENAME.borrow_ref(cs),
+                        *INSTANCENAME.borrow_ref(cs),
+                        *SUBTYPES.borrow_ref(cs),
+                        *DNSTXT.borrow_ref(cs),
+                        pmindp_sensor::PLANT_CONFIG.srp_port,
+                        None,
+                        None,
+                        Some(pmindp_sensor::PLANT_CONFIG.srp_lease),
+                        Some(pmindp_sensor::PLANT_CONFIG.srp_key_lease),
+                    ) {
+                        log::error!("Error registering service {e:?}");
                     }
                 });
-
-
-                if let Err(e) = self.openthread.setup_srp_client_host_addr_autoconfig() {
-                    log::error!("Error enabling srp client {e:?}");
-                }
-
-                let mut base: String = rando;
-                base.push_str("-soil-srvc");
-                base.push_str("\0");
-
-                let service_name: &'a str = Box::leak(Box::new(base.to_owned()));
-                log::info!("Registering host name {:?} service name {:?}", host_name, service_name);
-
-                let instance_name: &'a str = Box::leak(Box::new("_soil._tcp"));
-
-                if let Err(e) = self.openthread.register_service_with_srp_client(
-                    service_name,
-                    instance_name,
-                    &[],
-                    "",
-                    12345,
-                    None,
-                    None,
-                    Some(7200),
-                    Some(680400),
-                ) {
-                    log::error!("Error registering service {e:?}");
-                }
+                log::info!("Services registered");
                 break;
             }
         }
+
+        Ok(())
+    }
+
+    pub fn main_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
+
+        self.ot_setup()?;
+        // if we return from this loop, something has gone wrong
+        if let Err(_e) = self.coap_server_event_loop() {}
+
+        self.openthread.thread_set_enabled(false).unwrap();
+        self.openthread.ipv6_set_enabled(false).unwrap();
+
+        log::error!("Unable to recover Thread network connection, resetting CPU!");
+        Err(Esp32PlatformError::PlatformError)
+    }
+
+    pub fn coap_server_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
+
+
+        log::info!("CoAP server loop");
+        let mut buffer = [0u8; 512];
+        let mut data;
+        let mut eui: [u8; 6] = [0u8; 6];
 
         let mut observer_addr: Option<(no_std_net::Ipv6Addr, u16)> = None;
         // This block is needed to constrain how long the immutable borrow of openthread,
@@ -199,7 +244,9 @@ where
         {
             let mut socket = self.openthread.get_udp_socket::<512>().unwrap();
             let mut socket = pin!(socket);
-            socket.bind(BOUND_PORT).unwrap();
+            socket
+                .bind(pmindp_sensor::PLANT_CONFIG.coap_registration_port)
+                .unwrap();
 
             // make this big
             let mut send_data_buf: [u8; 127] = [0u8; 127];
@@ -212,14 +259,19 @@ where
                     .write(brightness(gamma(data.iter().cloned()), 50))
                     .unwrap();
 
-                if let Some((observer, port)) = observer_addr {
-                    let read_sensor = critical_section::with(|cs| {
-                        let res = *SENSOR_TIMER_FIRED.borrow_ref_mut(cs);
-                        *SENSOR_TIMER_FIRED.borrow_ref_mut(cs) = false;
-                        res
-                    });
+                let read_sensor = critical_section::with(|cs| {
+                    let res = *SENSOR_TIMER_FIRED.borrow_ref_mut(cs);
+                    *SENSOR_TIMER_FIRED.borrow_ref_mut(cs) = false;
+                    res
+                });
 
+                if let Some((observer, port)) = observer_addr {
                     if read_sensor {
+                        log::info!("Reading sensor");
+                        // first run these again just in case we are about to hit a checkin window
+                        self.openthread.process();
+                        self.openthread.run_tasklets();
+
                         match self.sensor_read(&mut send_data_buf) {
                             Ok(r) => {
                                 if let Ok(sensor_data) = serde_json::to_vec(&r) {
@@ -252,8 +304,11 @@ where
                     }
                 }
 
-                let (len, from, port) = socket.receive(&mut buffer).unwrap();
+                let (len, from, _port) = socket.receive(&mut buffer).unwrap();
+
                 if len > 0 {
+                    log::info!("Registering observer from CoAP server!!");
+
                     if let Ok(packet) = Packet::from_bytes(&buffer[..len]) {
                         let request = CoapRequest::from_packet(packet, from);
 
@@ -296,17 +351,6 @@ where
 
                         observer_addr = Some((from, port_req));
                         log::info!("Handshake complete");
-                    } else {
-                        log::info!(
-                            "received {:02x?} from {:?} port {}",
-                            &buffer[..len],
-                            from,
-                            port
-                        );
-
-                        socket
-                            .send(from, BOUND_PORT, b"beefface authenticate!")
-                            .unwrap();
                     }
                 }
 
@@ -316,17 +360,13 @@ where
                     .unwrap();
             }
         }
+
+    //    let counters = self.openthread.get_link_counters();
+   //     log::info!("Link counters: {:?}", unsafe { &*counters });
+
         log::error!("Socket error, most likely node has dropped from the network");
 
-        let counters = self.openthread.get_link_counters();
-        log::error!("LINK COUNTERS {counters:?}");
-
-        if let Err(e) = self.openthread.search_for_better_parent() {
-            log::error!("Unable to trigger search for better parent {e:?}");
-        }
-        //self.openthread.thread_set_enabled(false).unwrap();
-        //Err(Esp32PlatformError::PlatformError)
-        panic!();
+        Err(Esp32PlatformError::PlatformError)
     }
 
     pub fn reset(&mut self) {

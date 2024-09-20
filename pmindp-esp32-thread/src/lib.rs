@@ -74,7 +74,7 @@ pub fn init_heap() {
     //static mut HEAP: [u8; SIZE] = [0; SIZE];
     //unsafe { ALLOC.init(addr_of_mut!(HEAP) as *mut u8, SIZE) }
 
-    esp_alloc::heap_allocator!(32768);
+    esp_alloc::heap_allocator!(72 * 1024);
 }
 
 pub type SensorVec = Vec<Option<Mutex<RefCell<Box<dyn Sensor>>>>>;

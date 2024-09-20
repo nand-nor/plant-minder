@@ -135,7 +135,7 @@ fn main() -> ! {
         // this will enter a loop where if it ever breaks,
         // we need to do a full reset
         // TODO find way to recover without resetting
-        if platform.coap_server_event_loop().is_err() {
+        if platform.main_event_loop().is_err() {
             println!("Unrecoverable error, resetting cpu!");
             platform.reset();
         }

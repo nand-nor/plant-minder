@@ -15,6 +15,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub const BOUND_PORT: u16 = 1212;
+
 /// [`PlantConfig`] struct is used at compile time by
 /// esp32 nodes, to report to the RPI what plants they
 /// are currently associated with
@@ -28,6 +30,37 @@ pub struct PlantConfig {
     species: &'static str,
     #[default(GrowthStage::Vegetative)]
     growth_stage: GrowthStage,
+    #[default(12345)]
+    srp_port: u16,
+    #[default("-soil-srvc")]
+    srp_service_base: &'static str,
+    #[default("_soil._tcp")]
+    srp_instance: &'static str,
+    #[default(7200)]
+    srp_lease: u32,
+    #[default(680400)]
+    srp_key_lease: u32,
+    #[default(BOUND_PORT)]
+    coap_registration_port: u16,
+    #[default("OpenThread-58d1")]
+    ot_network_name: &'static str,
+    #[default(0x58d1)]
+    ot_pan_id: u16,
+    #[default(25)]
+    ot_channel: u8,
+    #[default(0x07fff800)]
+    ot_channel_mask: u32,
+    #[default([0x3a, 0x90, 0xe3, 0xa3, 0x19, 0xa9, 0x04, 0x94])]
+    ot_ext_pan_id: [u8; 8],
+    #[default([
+        0xfe, 0x04, 0x58, 0xf7, 0xdb, 0x96, 0x35, 0x4e, 0xaa, 0x60, 0x41, 0xb8, 0x80, 0xea,
+        0x9c, 0x0f,
+    ])]
+    ot_network_key: [u8; 16],
+    #[default(240)]
+    ot_child_timeout: u32,
+    #[default(18)]
+    ot_tx_power: i8,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq, Debug)]
