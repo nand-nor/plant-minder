@@ -42,36 +42,27 @@ pub use crate::{
 #[cfg(not(feature = "esp32h2"))]
 pub use crate::sensor::ProbeCircuit;
 
-use core::{cell::RefCell, ptr::addr_of_mut};
+use core::cell::RefCell;
 use critical_section::Mutex;
 use esp_hal::{
-    clock::Clocks,
-    gpio::GpioPin,
     interrupt::{self, Priority},
-    peripheral::Peripheral,
     peripherals::{Interrupt, TIMG0},
-    peripherals::{RMT, RNG},
+    peripherals::RNG,
     prelude::*,
-    rmt::Rmt,
     rng::Rng,
     timer::systimer::{Alarm, SpecificComparator, SpecificUnit, Target},
     timer::timg::{Timer, Timer0, TimerGroup},
     Blocking,
 };
-use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_ieee802154::Ieee802154;
 
 use pmindp_sensor::{Sensor, SensorPlatform};
 
 use alloc::{boxed::Box, vec::Vec};
 
-#[global_allocator]
-static ALLOC: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
-
 pub fn init_heap() {
     const SIZE: usize = 32768;
-    static mut HEAP: [u8; SIZE] = [0; SIZE];
-    unsafe { ALLOC.init(addr_of_mut!(HEAP) as *mut u8, SIZE) }
+    esp_alloc::heap_allocator!(SIZE);
 }
 
 pub type SensorVec = Vec<Option<Mutex<RefCell<Box<dyn Sensor>>>>>;
@@ -86,11 +77,8 @@ static SENSOR_TIMER_INTERVAL: Mutex<RefCell<u64>> = Mutex::new(RefCell::new(DEFA
 
 static SENSOR_TIMER_FIRED: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
 
-// TODO builder?
-#[allow(clippy::too_many_arguments)]
 pub fn init<'a>(
     ieee802154: &'a mut Ieee802154,
-    clocks: &Clocks,
     timer: Alarm<
         'static,
         Target,
@@ -99,8 +87,6 @@ pub fn init<'a>(
         SpecificUnit<'static, 0>,
     >,
     timg0: TimerGroup<TIMG0, Blocking>,
-    rmt: impl Peripheral<P = RMT> + 'a,
-    led_pin: GpioPin<8>,
     rng: RNG,
     sensors: SensorVec,
 ) -> Esp32Platform<'a>
@@ -108,18 +94,10 @@ where
     Esp32Platform<'a>: SensorPlatform,
 {
     let openthread = esp_openthread::OpenThread::new(ieee802154, timer, Rng::new(rng));
-    #[cfg(not(feature = "esp32h2"))]
-    let rmt = Rmt::new(rmt, 80.MHz(), clocks).unwrap();
-    #[cfg(feature = "esp32h2")]
-    let rmt = Rmt::new(rmt, 32.MHz(), &clocks).unwrap();
-
-    let rmt_buffer = smartLedBuffer!(1);
-    let led = SmartLedsAdapter::new(rmt.channel0, led_pin, rmt_buffer, clocks);
-
     let timer = timg0.timer0;
     setup_sensor_timer(timer, 25000);
 
-    Esp32Platform::new(led, openthread, sensors)
+    Esp32Platform::new(openthread, sensors)
 }
 
 #[handler]
