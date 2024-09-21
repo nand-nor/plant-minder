@@ -1,14 +1,11 @@
 use core::pin::pin;
-use esp_hal::{reset::software_reset_cpu, rmt::Channel, Blocking};
-use esp_hal_smartled::SmartLedsAdapter;
-use esp_ieee802154::Config;
+use esp_hal::reset::software_reset_cpu;
 use esp_openthread::{
     NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadTimestamp,
 };
 
 use coap_lite::{CoapRequest, Packet};
 use pmindp_sensor::{PlatformSensorError, SensorPlatform};
-use smart_leds::{brightness, colors, gamma, SmartLedsWrite};
 
 use crate::{SensorVec, SENSOR_TIMER_FIRED};
 
@@ -19,7 +16,6 @@ use crate::{SensorVec, SENSOR_TIMER_FIRED};
 pub const BOUND_PORT: u16 = 1212;
 
 pub struct Esp32Platform<'a> {
-    led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
     openthread: OpenThread<'a>,
     sensors: SensorVec,
 }
@@ -36,30 +32,16 @@ where
     Esp32Platform<'a>: SensorPlatform,
 {
     pub fn new(
-        led: SmartLedsAdapter<Channel<Blocking, 0>, 25>,
         openthread: OpenThread<'a>,
         sensors: SensorVec,
     ) -> Self {
         Self {
-            led,
             openthread,
             sensors,
         }
     }
 
     pub fn coap_server_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
-        self.openthread
-            .set_radio_config(Config {
-                auto_ack_tx: true,
-                auto_ack_rx: true,
-                promiscuous: false,
-                rx_when_idle: false,
-                txpower: 18, // 18 txpower is legal for North America
-                channel: 25, // match the dataset
-                ..Config::default()
-            })
-            .unwrap();
-
         let dataset = OperationalDataset {
             active_timestamp: Some(ThreadTimestamp {
                 seconds: 1,
@@ -81,13 +63,10 @@ where
         log::debug!("Programmed child device with dataset : {:?}", dataset);
 
         self.openthread.set_active_dataset(dataset).unwrap();
-        self.openthread.set_child_timeout(60).unwrap();
         self.openthread.ipv6_set_enabled(true).unwrap();
         self.openthread.thread_set_enabled(true).unwrap();
 
         let mut buffer = [0u8; 512];
-
-        let mut data;
         let mut eui: [u8; 6] = [0u8; 6];
 
         let mut observer_addr: Option<(no_std_net::Ipv6Addr, u16)> = None;
@@ -103,11 +82,6 @@ where
             loop {
                 self.openthread.process();
                 self.openthread.run_tasklets();
-
-                data = [colors::SEA_GREEN];
-                self.led
-                    .write(brightness(gamma(data.iter().cloned()), 50))
-                    .unwrap();
 
                 if let Some((observer, port)) = observer_addr {
                     let read_sensor = critical_section::with(|cs| {
@@ -130,12 +104,7 @@ where
                                         log::error!("Error sending, resetting due to {e:?}");
                                         socket.close().ok();
                                         break;
-                                    } else {
-                                        data = [colors::MISTY_ROSE];
-                                        self.led
-                                            .write(brightness(gamma(data.iter().cloned()), 100))
-                                            .ok();
-                                    }
+                                    } 
                                 } else {
                                     log::error!("Unable to serialize sensor data");
                                 }
@@ -205,11 +174,6 @@ where
                             .unwrap();
                     }
                 }
-
-                data = [colors::MEDIUM_ORCHID];
-                self.led
-                    .write(brightness(gamma(data.iter().cloned()), 50))
-                    .unwrap();
             }
         }
         log::error!("Socket error, most likely node has dropped from the network");
