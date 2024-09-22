@@ -18,7 +18,7 @@ log = {version= "0.4.21"}
 heapless = {version= "0.8.0"}
 no-std-net = {version= "0.6.0"}
 critical-section = {version= "1.1.0"}
-esp-openthread = {path="./esp-openthread/esp-openthread"}
+esp-openthread = {path="./esp-openthread/esp-openthread", features=["srp-client"]}
 coap-lite = {version="0.12.0", features=["udp"],default-features=false}
 pmindp-sensor = {  path="../pmindp-sensor"}
 serde_json = {version = "1.0", default-features=false, features = ["alloc"] } 
@@ -28,7 +28,6 @@ static_cell = "2.1.0"
 sht4x = { version = "0.2.0", git = "https://github.com/hawkw/sht4x", branch="eliza/embedded-hal-1.0"}
 
 [features]
-default = []
 esp32c6 = [ "esp-hal/esp32c6", "esp-ieee802154/esp32c6", "esp-openthread/esp32c6", "esp-backtrace/esp32c6", "esp-println/esp32c6"] #, "esp-hal-smartled/esp32c6" ]
 esp32h2 = [ "esp-hal/esp32h2", "esp-ieee802154/esp32h2", "esp-openthread/esp32h2", "esp-backtrace/esp32h2", "esp-println/esp32h2"] #, "esp-hal-smartled/esp32h2" ]
 probe-circuit = []

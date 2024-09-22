@@ -36,7 +36,7 @@ use critical_section::Mutex;
 fn main() -> ! {
     esp_println::logger::init_logger(log::LevelFilter::Info);
 
-    esp_alloc::heap_allocator!(72 * 1024);
+    esp_alloc::heap_allocator!(64 * 1024);
 
     let mut peripherals = esp_hal::init(esp_hal::Config::default());
 
@@ -129,7 +129,7 @@ fn main() -> ! {
         // this will enter a loop where if it ever breaks,
         // we need to do a full reset
         // TODO find way to recover without resetting
-        if platform.coap_server_event_loop().is_err() {
+        if platform.main_event_loop().is_err() {
             println!("Unrecoverable error, resetting cpu!");
             platform.reset();
         }

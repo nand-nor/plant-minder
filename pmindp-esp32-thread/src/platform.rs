@@ -1,30 +1,42 @@
-use core::pin::pin;
+use core::{borrow::BorrowMut, cell::RefCell, pin::pin};
 use esp_hal::reset::software_reset_cpu;
+use esp_ieee802154::Config;
 use esp_openthread::{
     NetworkInterfaceUnicastAddress, OpenThread, OperationalDataset, ThreadTimestamp,
 };
 
+use critical_section::Mutex;
+
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{String, ToString},
+};
+
 use coap_lite::{CoapRequest, Packet};
+use esp_openthread::ChangedFlags;
 use pmindp_sensor::{PlatformSensorError, SensorPlatform};
 
-use crate::{SensorVec, SENSOR_TIMER_FIRED};
+use crate::{HOSTNAME, BASE_HOSTNAME, SERVICENAME, BASE_SERVICENAME, INSTANCENAME, DNSTXT, SUBTYPES, SensorVec, SENSOR_TIMER_FIRED};
 
-// TODO put this in pmindp-sensor so other crates in
-// workspace can access this
-// also do that for any other constants that both
-// sender and receiver need to know
+static CHANGED: Mutex<RefCell<(bool, ChangedFlags)>> =
+    Mutex::new(RefCell::new((false, ChangedFlags::Ipv6AddressAdded)));
+
+
 pub const BOUND_PORT: u16 = 1212;
 
-pub struct Esp32Platform<'a> {
-    openthread: OpenThread<'a>,
-    sensors: SensorVec,
-}
 
 pub enum Esp32PlatformError {
     SensorError,
     PlatformError,
     PeripheralError,
+    SrpServiceRegError,
     OtherError,
+}
+
+pub struct Esp32Platform<'a> {
+    openthread: OpenThread<'a>,
+    sensors: SensorVec,
 }
 
 impl<'a> Esp32Platform<'a>
@@ -38,18 +50,28 @@ where
         }
     }
 
-    pub fn coap_server_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
+    fn ot_setup(&mut self) -> Result<(), Esp32PlatformError> {
         self.openthread
-            .set_radio_config(esp_ieee802154::Config {
+            .set_radio_config(Config {
                 auto_ack_tx: true,
                 auto_ack_rx: true,
                 promiscuous: false,
                 rx_when_idle: false,
                 txpower: 18, // 18 txpower is legal for North America
                 channel: 25, // match the dataset
-                ..esp_ieee802154::Config::default()
+                ..Config::default()
             })
             .unwrap();
+
+        let change_callback = |flags| {
+            log::info!("{:?}", flags);
+            critical_section::with(|cs| *CHANGED.borrow_ref_mut(cs) = (true, flags));
+        };
+
+        let callback: &'static mut (dyn FnMut(ChangedFlags) + Send) =
+            Box::leak(Box::new(change_callback));
+
+        self.openthread.set_change_callback(Some(callback));
 
         let dataset = OperationalDataset {
             active_timestamp: Some(ThreadTimestamp {
@@ -69,37 +91,151 @@ where
 
             ..OperationalDataset::default()
         };
-        log::debug!("Programmed child device with dataset : {:?}", dataset);
 
+        if let Err(e) = self.openthread.setup_srp_client_autostart(None) {
+            log::error!("Error enabling srp client {e:?}");
+        }
+
+        log::info!("Programming device with dataset : {:?}", dataset);
         self.openthread.set_active_dataset(dataset).unwrap();
+
         self.openthread.ipv6_set_enabled(true).unwrap();
         self.openthread.thread_set_enabled(true).unwrap();
 
+        let mut register = false;
+        loop {
+            self.openthread.process();
+            self.openthread.run_tasklets();
+            critical_section::with(|cs| {
+                let mut c = CHANGED.borrow_ref_mut(cs);
+                if c.0 {
+                    if c.1.contains(ChangedFlags::ThreadRlocAdded) {
+                        log::info!("Attached to network, can now register SRP service");
+                        register = true;
+                    }
+                    c.0 = false;
+                }
+            });
+
+            if register {
+                critical_section::with(|cs| {
+                    if let Err(e) = self
+                        .openthread
+                        .setup_srp_client_set_hostname(*HOSTNAME.borrow_ref(cs))
+                    {
+                        log::error!("Error enabling srp client {e:?}");
+                    }
+                });
+
+                if let Err(e) = self.openthread.setup_srp_client_host_addr_autoconfig() {
+                    log::error!("Error enabling srp client {e:?}");
+                }
+
+                critical_section::with(|cs| {
+                    if let Err(e) = self.openthread.register_service_with_srp_client(
+                        *SERVICENAME.borrow_ref(cs),
+                        *INSTANCENAME.borrow_ref(cs),
+                        *SUBTYPES.borrow_ref(cs),
+                        *DNSTXT.borrow_ref(cs),
+                        12345,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ) {
+                        log::error!("Error registering service {e:?}");
+                    } 
+                });
+                log::info!("Services registered");
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returning from this context will reset the CPU
+    pub fn main_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
+
+        log::info!("Setting up hostname and service name...");
+        let rand = esp_openthread::get_random_u32();
+        let mut rand = rand.to_string();
+    
+        // Add some random bytes so host name and service name are "unique"
+        // every time this code runs (to avoid SRP collisions)
+        let mut base_host: String = rand.clone();
+        base_host.push_str(BASE_HOSTNAME);
+    
+        let mut base_srvc: String = rand;
+        base_srvc.push_str(BASE_SERVICENAME);
+
+        critical_section::with(|cs| {
+            let mut host = HOSTNAME.borrow_ref_mut(cs);
+            let mut host = (&mut *host).borrow_mut();
+            *host = unsafe { core::mem::transmute(base_host.as_str()) };
+             
+            let mut srvc = SERVICENAME.borrow_ref_mut(cs);
+            let mut srvc = (&mut *srvc).borrow_mut();
+            *srvc = unsafe { core::mem::transmute(base_srvc.as_str()) };
+        });
+
+        if self.ot_setup().is_ok() {
+            // if we return from this loop, something has gone wrong
+            if let Err(_e) = self.coap_server_event_loop() {}
+        }
+
+        log::error!("Unable to recover Thread network connection, resetting CPU!");
+        Err(Esp32PlatformError::PlatformError)
+    }
+
+    pub fn coap_server_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
+        log::info!("CoAP server loop");
         let mut buffer = [0u8; 512];
         let mut eui: [u8; 6] = [0u8; 6];
 
         let mut observer_addr: Option<(no_std_net::Ipv6Addr, u16)> = None;
-        // This block is needed to constrain how long the immutable borrow of openthread,
-        // which happens when the socket object is created, exists
+        // This block is needed to constrain the lifetime of this borrow of
+        // the OpenThread object, which happens when the socket object is created
         {
             let mut socket = self.openthread.get_udp_socket::<512>().unwrap();
             let mut socket = pin!(socket);
             socket.bind(BOUND_PORT).unwrap();
 
-            // make this big
             let mut send_data_buf: [u8; 127] = [0u8; 127];
+            let mut read_sensor: bool = false;
+            let mut soft_reset: bool = false;
             loop {
                 self.openthread.process();
                 self.openthread.run_tasklets();
 
+                critical_section::with(|cs| {
+                    let mut c = CHANGED.borrow_ref_mut(cs);
+                    if c.0 {
+                        if c.1.contains(ChangedFlags::ThreadRlocRemoved) {
+                            log::warn!("Dettached from network, attempt to rejoin!");
+                            soft_reset = true;
+                        }
+                        c.0 = false;
+                    }
+                });
+
+                if soft_reset {
+                    break;
+                }
+
                 if let Some((observer, port)) = observer_addr {
-                    let read_sensor = critical_section::with(|cs| {
+                    read_sensor = critical_section::with(|cs| {
                         let res = *SENSOR_TIMER_FIRED.borrow_ref_mut(cs);
                         *SENSOR_TIMER_FIRED.borrow_ref_mut(cs) = false;
                         res
                     });
 
                     if read_sensor {
+                        log::info!("Reading sensor");
+                        // first run these again just in case we are about to hit a checkin window
+                        self.openthread.process();
+                        self.openthread.run_tasklets();
+
                         match self.sensor_read(&mut send_data_buf) {
                             Ok(r) => {
                                 if let Ok(sensor_data) = serde_json::to_vec(&r) {
@@ -126,8 +262,11 @@ where
                     }
                 }
 
-                let (len, from, port) = socket.receive(&mut buffer).unwrap();
+                let (len, from, _port) = socket.receive(&mut buffer).unwrap();
+
                 if len > 0 {
+                    log::info!("Registering observer from CoAP server!!");
+
                     if let Ok(packet) = Packet::from_bytes(&buffer[..len]) {
                         let request = CoapRequest::from_packet(packet, from);
 
@@ -170,23 +309,17 @@ where
 
                         observer_addr = Some((from, port_req));
                         log::info!("Handshake complete");
-                    } else {
-                        log::info!(
-                            "received {:02x?} from {:?} port {}",
-                            &buffer[..len],
-                            from,
-                            port
-                        );
-
-                        socket
-                            .send(from, BOUND_PORT, b"beefface authenticate!")
-                            .unwrap();
                     }
                 }
             }
         }
-        log::error!("Socket error, most likely node has dropped from the network");
+
+        // disable thread and ipv6
         self.openthread.thread_set_enabled(false).unwrap();
+        self.openthread.ipv6_set_enabled(false).unwrap();
+
+        log::error!("Socket error, most likely node has dropped from the network");
+
         Err(Esp32PlatformError::PlatformError)
     }
 

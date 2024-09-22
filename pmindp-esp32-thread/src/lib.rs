@@ -69,6 +69,18 @@ const DEFAULT_MIN_INTERVAL: u64 = 5000;
 static SENSOR_TIMER_INTERVAL: Mutex<RefCell<u64>> = Mutex::new(RefCell::new(DEFAULT_MIN_INTERVAL));
 static SENSOR_TIMER_FIRED: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
 
+
+static HOSTNAME: Mutex<RefCell<&'static str>> = Mutex::new(RefCell::new(BASE_HOSTNAME));
+static SERVICENAME: Mutex<RefCell<&'static str>> = Mutex::new(RefCell::new(BASE_SERVICENAME));
+static INSTANCENAME: Mutex<RefCell<&'static str>> = Mutex::new(RefCell::new(BASE_INSTANCENAME));
+static DNSTXT: Mutex<RefCell<&'static str>> = Mutex::new(RefCell::new(""));
+static SUBTYPES: Mutex<RefCell<&'static [&'static str]>> = Mutex::new(RefCell::new(&[]));
+
+const BASE_HOSTNAME: &str = "-pminder\0";
+const BASE_SERVICENAME: &str = "-pmind-srvc";
+const BASE_INSTANCENAME: &str = "_soil._tcp";
+
+
 pub fn init<'a>(
     ieee802154: &'a mut Ieee802154,
     timer: Alarm<
