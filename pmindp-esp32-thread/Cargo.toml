@@ -18,7 +18,7 @@ log = {version= "0.4.21"}
 heapless = {version= "0.8.0"}
 no-std-net = {version= "0.6.0"}
 critical-section = {version= "1.1.0"}
-esp-openthread = { version= "0.4.0", git = "https://github.com/nand-nor/esp-openthread.git", rev="522e6c9"}
+esp-openthread = {path="./esp-openthread/esp-openthread"}
 coap-lite = {version="0.12.0", features=["udp"],default-features=false}
 pmindp-sensor = {  path="../pmindp-sensor"}
 serde_json = {version = "1.0", default-features=false, features = ["alloc"] } 

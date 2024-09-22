@@ -31,10 +31,7 @@ impl<'a> Esp32Platform<'a>
 where
     Esp32Platform<'a>: SensorPlatform,
 {
-    pub fn new(
-        openthread: OpenThread<'a>,
-        sensors: SensorVec,
-    ) -> Self {
+    pub fn new(openthread: OpenThread<'a>, sensors: SensorVec) -> Self {
         Self {
             openthread,
             sensors,
@@ -42,6 +39,18 @@ where
     }
 
     pub fn coap_server_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
+        self.openthread
+            .set_radio_config(esp_ieee802154::Config {
+                auto_ack_tx: true,
+                auto_ack_rx: true,
+                promiscuous: false,
+                rx_when_idle: false,
+                txpower: 18, // 18 txpower is legal for North America
+                channel: 25, // match the dataset
+                ..esp_ieee802154::Config::default()
+            })
+            .unwrap();
+
         let dataset = OperationalDataset {
             active_timestamp: Some(ThreadTimestamp {
                 seconds: 1,
@@ -104,7 +113,7 @@ where
                                         log::error!("Error sending, resetting due to {e:?}");
                                         socket.close().ok();
                                         break;
-                                    } 
+                                    }
                                 } else {
                                     log::error!("Unable to serialize sensor data");
                                 }

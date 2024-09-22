@@ -46,8 +46,8 @@ use core::cell::RefCell;
 use critical_section::Mutex;
 use esp_hal::{
     interrupt::{self, Priority},
-    peripherals::{Interrupt, TIMG0},
     peripherals::RNG,
+    peripherals::{Interrupt, TIMG0},
     prelude::*,
     rng::Rng,
     timer::systimer::{Alarm, SpecificComparator, SpecificUnit, Target},
@@ -60,21 +60,13 @@ use pmindp_sensor::{Sensor, SensorPlatform};
 
 use alloc::{boxed::Box, vec::Vec};
 
-pub fn init_heap() {
-    const SIZE: usize = 32768;
-    esp_alloc::heap_allocator!(SIZE);
-}
-
 pub type SensorVec = Vec<Option<Mutex<RefCell<Box<dyn Sensor>>>>>;
 
 type SensorTimer = Mutex<RefCell<Option<Timer<Timer0<TIMG0>, Blocking>>>>;
 
 static SENSOR_TIMER: SensorTimer = Mutex::new(RefCell::new(None));
-
 const DEFAULT_MIN_INTERVAL: u64 = 5000;
-
 static SENSOR_TIMER_INTERVAL: Mutex<RefCell<u64>> = Mutex::new(RefCell::new(DEFAULT_MIN_INTERVAL));
-
 static SENSOR_TIMER_FIRED: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
 
 pub fn init<'a>(

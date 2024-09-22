@@ -23,7 +23,7 @@ use static_cell::StaticCell;
 use esp_hal::gpio::{Level, Output};
 
 use esp_println::println;
-use pmindp_esp32_thread::{init_heap, SensorVec};
+use pmindp_esp32_thread::SensorVec;
 
 use esp_ieee802154::Ieee802154;
 
@@ -36,7 +36,7 @@ use critical_section::Mutex;
 fn main() -> ! {
     esp_println::logger::init_logger(log::LevelFilter::Info);
 
-    init_heap();
+    esp_alloc::heap_allocator!(72 * 1024);
 
     let mut peripherals = esp_hal::init(esp_hal::Config::default());
 
@@ -49,19 +49,9 @@ fn main() -> ! {
     let alarm = Alarm::new(systimer.comparator0, &frozen_unit);
 
     #[cfg(not(feature = "esp32h2"))]
-    let i2c = I2C::new(
-        peripherals.I2C0,
-        io.pins.gpio5,
-        io.pins.gpio6,
-        400.kHz(),
-    );
+    let i2c = I2C::new(peripherals.I2C0, io.pins.gpio5, io.pins.gpio6, 400.kHz());
     #[cfg(feature = "esp32h2")]
-    let i2c = I2C::new(
-        peripherals.I2C0,
-        io.pins.gpio2,
-        io.pins.gpio3,
-        400.kHz(),
-    );
+    let i2c = I2C::new(peripherals.I2C0, io.pins.gpio2, io.pins.gpio3, 400.kHz());
 
     let i2c_ref_cell = RefCell::new(i2c);
     let i2c_ref_cell: &'static _ = Box::leak(Box::new(i2c_ref_cell));

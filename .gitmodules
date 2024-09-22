@@ -1,0 +1,3 @@
+[submodule "pmindp-esp32-thread/esp-openthread"]
+	path = pmindp-esp32-thread/esp-openthread
+	url = https://github.com/nand-nor/esp-openthread
