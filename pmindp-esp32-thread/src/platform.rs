@@ -8,7 +8,6 @@ use esp_openthread::{
 use critical_section::Mutex;
 
 use alloc::{
-    borrow::ToOwned,
     boxed::Box,
     string::{String, ToString},
 };
@@ -17,14 +16,18 @@ use coap_lite::{CoapRequest, Packet};
 use esp_openthread::ChangedFlags;
 use pmindp_sensor::{PlatformSensorError, SensorPlatform};
 
-use crate::{HOSTNAME, BASE_HOSTNAME, SERVICENAME, BASE_SERVICENAME, INSTANCENAME, DNSTXT, SUBTYPES, SensorVec, SENSOR_TIMER_FIRED};
+use crate::{
+    SensorVec, BASE_HOSTNAME, BASE_SERVICENAME, DNSTXT, HOSTNAME, INSTANCENAME, SENSOR_TIMER_FIRED,
+    SERVICENAME, SUBTYPES,
+};
 
 static CHANGED: Mutex<RefCell<(bool, ChangedFlags)>> =
     Mutex::new(RefCell::new((false, ChangedFlags::Ipv6AddressAdded)));
 
+static SRP_CLIENT_CHANGED: Mutex<RefCell<(u32, usize, usize, usize)>> =
+    Mutex::new(RefCell::new((0, 0, 0, 0)));
 
 pub const BOUND_PORT: u16 = 1212;
-
 
 pub enum Esp32PlatformError {
     SensorError,
@@ -92,6 +95,17 @@ where
             ..OperationalDataset::default()
         };
 
+        let srp_callback = |error, a, b, c| {
+            log::info!("SRP error callback: {:?}", error);
+            critical_section::with(|cs| *SRP_CLIENT_CHANGED.borrow_ref_mut(cs) = (error, a, b, c));
+        };
+
+        let srp_callback: &'static mut (dyn FnMut(u32, usize, usize, usize) + Send) =
+            Box::leak(Box::new(srp_callback));
+
+        self.openthread
+            .set_srp_state_callback(Some(srp_callback));
+
         if let Err(e) = self.openthread.setup_srp_client_autostart(None) {
             log::error!("Error enabling srp client {e:?}");
         }
@@ -102,10 +116,43 @@ where
         self.openthread.ipv6_set_enabled(true).unwrap();
         self.openthread.thread_set_enabled(true).unwrap();
 
+        let addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6> =
+            self.openthread.ipv6_get_unicast_addresses();
+
+        print_all_addresses(addrs);
+
+        // stop the client before registering if it is running
+        // Note: the esp-openthread lib currently is built with autostart enabled
+        if self.openthread.is_srp_client_running() {
+            self.openthread.stop_srp_client().ok();
+        }
+
         let mut register = false;
+
+        critical_section::with(|cs| {
+            let mut host = HOSTNAME.borrow_ref_mut(cs);
+            let host = host.borrow_mut();
+
+            if let Err(e) = self
+                .openthread
+                .setup_srp_client_set_hostname((*host).as_ref())
+            {
+                log::error!("Error enabling srp client {e:?}");
+            }
+        });
+
+        if let Err(e) = self.openthread.setup_srp_client_host_addr_autoconfig() {
+            log::error!("Error enabling srp client {e:?}");
+        }
+
+        self.openthread.set_srp_client_key_lease_interval(6800).ok();
+        self.openthread.set_srp_client_lease_interval(720).ok();
+        self.openthread.set_srp_client_ttl(30);
+
         loop {
-            self.openthread.process();
             self.openthread.run_tasklets();
+            self.openthread.process();
+
             critical_section::with(|cs| {
                 let mut c = CHANGED.borrow_ref_mut(cs);
                 if c.0 {
@@ -119,36 +166,99 @@ where
 
             if register {
                 critical_section::with(|cs| {
-                    if let Err(e) = self
-                        .openthread
-                        .setup_srp_client_set_hostname(*HOSTNAME.borrow_ref(cs))
-                    {
-                        log::error!("Error enabling srp client {e:?}");
-                    }
-                });
-
-                if let Err(e) = self.openthread.setup_srp_client_host_addr_autoconfig() {
-                    log::error!("Error enabling srp client {e:?}");
-                }
-
-                critical_section::with(|cs| {
                     if let Err(e) = self.openthread.register_service_with_srp_client(
                         *SERVICENAME.borrow_ref(cs),
                         *INSTANCENAME.borrow_ref(cs),
                         *SUBTYPES.borrow_ref(cs),
                         *DNSTXT.borrow_ref(cs),
-                        12345,
-                        None,
-                        None,
+                        1212,
+                        Some(1),
+                        Some(1),
                         None,
                         None,
                     ) {
                         log::error!("Error registering service {e:?}");
-                    } 
+                    } else {
+                        log::info!(
+                            "Services registered {:?}, {:?}, {:?}",
+                            *HOSTNAME.borrow_ref(cs),
+                            *SERVICENAME.borrow_ref(cs),
+                            *INSTANCENAME.borrow_ref(cs)
+                        );
+                    }
                 });
-                log::info!("Services registered");
                 break;
             }
+        }
+
+        let state = self.openthread.get_srp_client_state();
+        log::info!("SRP client state: {:?}", state);
+
+        if let Err(e) = self.openthread.setup_srp_client_autostart(None) {
+            log::error!("Error enabling srp client {e:?}");
+        }
+
+        let services = self.openthread.srp_get_services();
+
+        for service in services {
+            unsafe {
+                log::info!(
+                    "Service name: {:?}",
+                    core::ffi::CStr::from_ptr(service.name).to_str().unwrap()
+                )
+            };
+            unsafe {
+                log::info!(
+                    "Instance name: {:?}",
+                    core::ffi::CStr::from_ptr(service.instance_name)
+                        .to_str()
+                        .unwrap()
+                )
+            };
+            unsafe {
+                log::info!(
+                    "DNS key: {:?} value {:?}",
+                    core::ffi::CStr::from_ptr((*service.txt_entries).mKey)
+                        .to_str()
+                        .unwrap(),
+                    (*service.txt_entries).mValue
+                )
+            };
+
+            log::info!("State: {:?}", service.state);
+        }
+
+        unsafe {
+            core::arch::asm!("fence");
+        }
+
+        let printem = critical_section::with(|cs| {
+            let mut c = CHANGED.borrow_ref_mut(cs);
+            if c.0 {
+                c.0 = false;
+                if c.1.contains(ChangedFlags::Ipv6AddressAdded) {
+                    log::error!("Dettached from network!");
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        });
+
+        if printem {
+            let addrs: heapless::Vec<NetworkInterfaceUnicastAddress, 6> =
+            self.openthread.ipv6_get_unicast_addresses();
+
+            print_all_addresses(addrs);
+        }
+
+        self.openthread.run_tasklets();
+        self.openthread.process();
+
+        unsafe {
+            core::arch::asm!("fence");
         }
 
         Ok(())
@@ -156,26 +266,25 @@ where
 
     /// Returning from this context will reset the CPU
     pub fn main_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
-
         log::info!("Setting up hostname and service name...");
         let rand = esp_openthread::get_random_u32();
-        let mut rand = rand.to_string();
-    
+        let rand = rand.to_string();
+
         // Add some random bytes so host name and service name are "unique"
         // every time this code runs (to avoid SRP collisions)
         let mut base_host: String = rand.clone();
         base_host.push_str(BASE_HOSTNAME);
-    
+
         let mut base_srvc: String = rand;
         base_srvc.push_str(BASE_SERVICENAME);
 
         critical_section::with(|cs| {
             let mut host = HOSTNAME.borrow_ref_mut(cs);
-            let mut host = (&mut *host).borrow_mut();
+            let host = (&mut *host).borrow_mut();
             *host = unsafe { core::mem::transmute(base_host.as_str()) };
-             
+
             let mut srvc = SERVICENAME.borrow_ref_mut(cs);
-            let mut srvc = (&mut *srvc).borrow_mut();
+            let srvc = (&mut *srvc).borrow_mut();
             *srvc = unsafe { core::mem::transmute(base_srvc.as_str()) };
         });
 
@@ -189,7 +298,6 @@ where
     }
 
     pub fn coap_server_event_loop(&mut self) -> Result<(), Esp32PlatformError> {
-        log::info!("CoAP server loop");
         let mut buffer = [0u8; 512];
         let mut eui: [u8; 6] = [0u8; 6];
 
@@ -202,26 +310,14 @@ where
             socket.bind(BOUND_PORT).unwrap();
 
             let mut send_data_buf: [u8; 127] = [0u8; 127];
-            let mut read_sensor: bool = false;
+            let mut read_sensor: bool;
             let mut soft_reset: bool = false;
+
+            log::info!("Dropping into CoAP server loop");
+
             loop {
-                self.openthread.process();
                 self.openthread.run_tasklets();
-
-                critical_section::with(|cs| {
-                    let mut c = CHANGED.borrow_ref_mut(cs);
-                    if c.0 {
-                        if c.1.contains(ChangedFlags::ThreadRlocRemoved) {
-                            log::warn!("Dettached from network, attempt to rejoin!");
-                            soft_reset = true;
-                        }
-                        c.0 = false;
-                    }
-                });
-
-                if soft_reset {
-                    break;
-                }
+                self.openthread.process();
 
                 if let Some((observer, port)) = observer_addr {
                     read_sensor = critical_section::with(|cs| {
@@ -311,6 +407,22 @@ where
                         log::info!("Handshake complete");
                     }
                 }
+            
+                critical_section::with(|cs| {
+                    let mut c = CHANGED.borrow_ref_mut(cs);
+                    if c.0 {
+                        if c.1.contains(ChangedFlags::ThreadRlocRemoved) {
+                            log::error!("Dettached from network!");
+                            soft_reset = true;
+                        }
+                        c.0 = false;
+                    }
+                });
+    
+                if soft_reset {
+                    break;
+                }
+
             }
         }
 
